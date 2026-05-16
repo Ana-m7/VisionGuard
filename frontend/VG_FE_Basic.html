@@ -186,12 +186,12 @@ html,body{height:100%;font-family:var(--sans);background:var(--bg);color:var(--t
     <span class="leg"><span class="swatch" style="background:#f85149"></span>Fight / Altercation</span>
     <span class="leg"><span class="swatch" style="background:#ff7b54"></span>Crash / Collision</span>
   </span>
-  <span style="color:var(--text3)">Click ⚡ on any camera to manually trigger an alert</span>
+  <span style="color:var(--text3)">Click on any camera to manually trigger an alert</span>
 </div>
 <div class="sim-bar">
   <span style="color:var(--text2)">AUTO-SIM:</span>
   <button class="sim-btn active" id="simToggle" onclick="toggleSim()">● Running</button>
-  <button class="sim-btn" onclick="triggerAllCams()">⚡ Trigger All</button>
+  <button class="sim-btn" onclick="triggerAllCams()"> Trigger All</button>
   <button class="sim-btn" onclick="clearAllAlerts()">✕ Clear All</button>
   <div class="sim-speed">
     <span>Interval:</span>
@@ -223,7 +223,7 @@ html,body{height:100%;font-family:var(--sans);background:var(--bg);color:var(--t
         <span class="cam-id">CAM-01 · Main Entrance</span>
         <div class="cam-controls">
           <span class="cam-st" id="st-1"><span class="st-dot"></span><span style="color:var(--green)">Normal</span></span>
-          <button class="trig-btn" onclick="manualTrigger(1)">⚡ Trigger</button>
+          <button class="trig-btn" onclick="manualTrigger(1)"> Trigger</button>
         </div>
       </div>
       <div class="cam-screen">
@@ -263,7 +263,7 @@ html,body{height:100%;font-family:var(--sans);background:var(--bg);color:var(--t
         <span class="cam-id">CAM-02 · Parking Lot</span>
         <div class="cam-controls">
           <span class="cam-st" id="st-2"><span class="st-dot"></span><span style="color:var(--green)">Normal</span></span>
-          <button class="trig-btn" onclick="manualTrigger(2)">⚡ Trigger</button>
+          <button class="trig-btn" onclick="manualTrigger(2)"> Trigger</button>
         </div>
       </div>
       <div class="cam-screen">
@@ -300,7 +300,7 @@ html,body{height:100%;font-family:var(--sans);background:var(--bg);color:var(--t
         <span class="cam-id">CAM-03 · Corridor B</span>
         <div class="cam-controls">
           <span class="cam-st" id="st-3"><span class="st-dot"></span><span style="color:var(--green)">Normal</span></span>
-          <button class="trig-btn" onclick="manualTrigger(3)">⚡ Trigger</button>
+          <button class="trig-btn" onclick="manualTrigger(3)"> Trigger</button>
         </div>
       </div>
       <div class="cam-screen">
@@ -339,7 +339,7 @@ html,body{height:100%;font-family:var(--sans);background:var(--bg);color:var(--t
         <span class="cam-id">CAM-04 · Main Office</span>
         <div class="cam-controls">
           <span class="cam-st" id="st-4"><span class="st-dot"></span><span style="color:var(--green)">Normal</span></span>
-          <button class="trig-btn" onclick="manualTrigger(4)">⚡ Trigger</button>
+          <button class="trig-btn" onclick="manualTrigger(4)"> Trigger</button>
         </div>
       </div>
       <div class="cam-screen">
@@ -464,13 +464,13 @@ const TYPES = {
     action:'Deploy security patrol to area'
   },
   fight: {
-    label:'FIGHT / ALTERCATION', short:'Fight', icon:'⚡',
+    label:'FIGHT / ALTERCATION', short:'Fight',
     color:'#f85149', textColor:'#fff', sev:'Critical',
     desc:'Physical altercation detected between individuals',
     action:'Immediate response — contact security & local authorities'
   },
   crash: {
-    label:'CRASH / COLLISION', short:'Collision', icon:'💥',
+    label:'CRASH / COLLISION', short:'Collision',
     color:'#ff7b54', textColor:'#fff', sev:'High',
     desc:'Vehicle or object collision detected',
     action:'Emergency services may be required'
@@ -735,7 +735,7 @@ function playBeep(type){
 }
 
 // ── EVENT LOG ────────────────────────────────────────────────────
-const ICONS={gathering:'👥',fight:'⚡',crash:'💥',ok:'✓'};
+const ICONS={gathering:'',fight:'',crash:'',ok:''};
 
 function addToLog(cam, type, T, C, conf){
   const list=document.getElementById('evt-list'); if(!list) return;
@@ -864,7 +864,7 @@ async function pollBackend(){
         // inject fall as a fight-style alert (red) since there's no fall type in sim
         if(!TYPES.fall){
           TYPES.fall = {
-            label:'FALL DETECTED', short:'Fall', icon:'🆘',
+            label:'FALL DETECTED', short:'Fall', icon:'',
             color:'#f85149', textColor:'#fff', sev:'Critical',
             desc:'Person fall detected — possible medical emergency',
             action:'Send medical assistance immediately'

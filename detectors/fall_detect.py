@@ -2,7 +2,7 @@ import cv2
 from ultralytics import YOLO
 
 # --- CONFIG ---
-VIDEO_PATH = "fall.mp4"   # swap to a video with someone falling
+VIDEO_PATH = "../videos/fall.mp4"   # swap to a video with someone falling
 ASPECT_RATIO_THRESHOLD = 1.3      # width/height > this = horizontal = fallen
 
 model = YOLO("yolov8n-pose.pt")   # auto-downloads

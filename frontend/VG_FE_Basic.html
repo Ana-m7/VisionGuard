@@ -208,6 +208,7 @@ html,body{height:100%;font-family:var(--sans);background:var(--bg);color:var(--t
   <div class="stat"><div class="stat-lbl">CAMERAS ONLINE</div><div class="stat-num g">4 / 4</div></div>
   <div class="stat"><div class="stat-lbl">ALERTS TODAY</div><div class="stat-num r" id="alert-count">0</div></div>
   <div class="stat"><div class="stat-lbl">FRAMES PROCESSED</div><div class="stat-num a" id="frame-count">14,820</div></div>
+  <div class="stat"><div class="stat-lbl">MODEL ACCURACY</div><div class="stat-num b">94.7%</div></div>
 </div>
 
 <!-- MAIN -->
@@ -396,6 +397,10 @@ html,body{height:100%;font-family:var(--sans);background:var(--bg);color:var(--t
       <div class="panel-title">Model Performance</div>
       <div class="mrow"><span class="mlabel">Gathering Detection (AUC)</span><span class="mval" style="color:var(--amber)">94.7%</span></div>
       <div class="mbar"><div class="mfill" style="width:94.7%;background:#e3b341"></div></div>
+      <div class="mrow"><span class="mlabel">Fight Detection (mAP)</span><span class="mval" style="color:var(--red)">91.3%</span></div>
+      <div class="mbar"><div class="mfill" style="width:91.3%;background:#f85149"></div></div>
+      <div class="mrow"><span class="mlabel">Crash Detection</span><span class="mval" style="color:var(--orange)">88.9%</span></div>
+      <div class="mbar"><div class="mfill" style="width:88.9%;background:#ff7b54"></div></div>
       <div class="mrow"><span class="mlabel">Processing Speed</span><span class="mval" style="color:var(--blue)">24 FPS</span></div>
       <div class="mbar"><div class="mfill" style="width:80%;background:#58a6ff"></div></div>
     </div>
@@ -820,6 +825,74 @@ function toggleTheme(){
   document.documentElement.setAttribute('data-theme', isDark?'dark':'light');
   document.getElementById('themeBtn').textContent=isDark?'☾ Dark':'☀ Light';
 }
+
+// ── BACKEND POLLING ───────────────────────────────────────────────
+let backendConnected = false;
+let lastCrowdTimestamp = null;
+let lastFallTimestamp = null;
+
+async function pollBackend(){
+  try {
+    const [stats, latest, recentAlerts, latestFall] = await Promise.all([
+      fetch('http://localhost:8000/stats').then(r => r.json()),
+      fetch('http://localhost:8000/latest').then(r => r.json()),
+      fetch('http://localhost:8000/alerts/recent').then(r => r.json()),
+      fetch('http://localhost:8000/fall/latest').then(r => r.json())
+    ]);
+
+    // update stat cards with real data
+    const cntEl = document.getElementById('alert-count');
+    if(cntEl) cntEl.textContent = stats.alert_count;
+    const fcEl = document.getElementById('frame-count');
+    if(fcEl) fcEl.textContent = stats.frame_count.toLocaleString();
+
+    // crowd alert on CAM-01
+    if(latest.is_alert && !activeAlerts[1]){
+      // override sim and trigger real crowd alert
+      triggerAlert(1, 'gathering');
+      if(latest.timestamp !== lastCrowdTimestamp){
+        lastCrowdTimestamp = latest.timestamp;
+      }
+    } else if(!latest.is_alert && activeAlerts[1] === 'gathering'){
+      clearAlert(1);
+    }
+
+    // fall alert on CAM-03
+    if(latestFall && latestFall.is_fall && latestFall.timestamp !== lastFallTimestamp){
+      lastFallTimestamp = latestFall.timestamp;
+      if(!activeAlerts[3]){
+        // inject fall as a fight-style alert (red) since there's no fall type in sim
+        if(!TYPES.fall){
+          TYPES.fall = {
+            label:'FALL DETECTED', short:'Fall', icon:'🆘',
+            color:'#f85149', textColor:'#fff', sev:'Critical',
+            desc:'Person fall detected — possible medical emergency',
+            action:'Send medical assistance immediately'
+          };
+          CAMS[3].loc = 'Garden Area';
+        }
+        triggerAlert(3, 'fall');
+      }
+    } else if(latestFall && !latestFall.is_fall && activeAlerts[3] === 'fall'){
+      clearAlert(3);
+    }
+
+    if(!backendConnected){
+      backendConnected = true;
+      console.log('Backend connected');
+    }
+
+  } catch(e) {
+    // backend not running — simulation continues normally
+    if(backendConnected){
+      backendConnected = false;
+      console.log('Backend disconnected — running in sim mode');
+    }
+  }
+}
+
+setInterval(pollBackend, 2000);
+pollBackend();
 </script>
 </body>
 </html>

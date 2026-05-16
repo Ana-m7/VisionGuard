@@ -1,0 +1,586 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>VisionGuard · Live Surveillance</title>
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg:#0d1117; --surf:#161b22; --surf2:#1c2128; --border:#30363d;
+  --text:#e6edf3; --text2:#8b949e; --text3:#6e7681;
+  --green:#3fb950; --red:#f85149; --amber:#e3b341; --blue:#58a6ff;
+  --bg-green:rgba(63,185,80,0.12); --bg-red:rgba(248,81,73,0.12);
+  --bg-amber:rgba(227,179,65,0.12); --bg-blue:rgba(88,166,255,0.12);
+  --mono:'Share Tech Mono',monospace;
+  --sans:'DM Sans',sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;font-family:var(--sans);background:var(--bg);color:var(--text);font-size:13px}
+
+/* HEADER */
+.hdr{background:var(--surf);border-bottom:0.5px solid var(--border);padding:0 16px;height:46px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:200}
+.hdr-l{display:flex;align-items:center;gap:10px}
+.logo{font-family:var(--mono);font-size:15px;color:var(--blue);letter-spacing:2px}
+.live-badge{display:flex;align-items:center;gap:5px;font-size:10px;padding:2px 9px;border-radius:20px;border:0.5px solid var(--green);color:var(--green);background:var(--bg-green);font-family:var(--mono)}
+.dot{width:6px;height:6px;border-radius:50%;background:var(--green);animation:blink 1.4s infinite}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:0.2}}
+.hdr-r{display:flex;align-items:center;gap:12px}
+.hdr-meta{font-family:var(--mono);font-size:11px;color:var(--text2)}
+
+/* LEGEND BAR */
+.info-bar{display:flex;align-items:center;justify-content:space-between;padding:6px 16px;background:var(--surf);border-bottom:0.5px solid var(--border);font-size:10px;color:var(--text3);font-family:var(--mono)}
+.leg{display:flex;align-items:center;gap:5px}
+.swatch{width:9px;height:9px;border-radius:2px}
+
+/* STATUS BAR */
+.status-bar{display:flex;align-items:center;gap:8px;padding:5px 16px;background:var(--surf);border-bottom:0.5px solid var(--border);font-size:10px;font-family:var(--mono);color:var(--text3)}
+.status-indicator{display:flex;align-items:center;gap:5px}
+.status-dot{width:6px;height:6px;border-radius:50%}
+.status-dot.connected{background:var(--green)}
+.status-dot.disconnected{background:var(--red);animation:blink 1s infinite}
+
+/* STATS */
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;padding:10px 16px}
+.stat{background:var(--surf);border:0.5px solid var(--border);border-radius:8px;padding:11px 14px}
+.stat-lbl{font-size:10px;font-family:var(--mono);color:var(--text2);letter-spacing:.5px;margin-bottom:5px}
+.stat-num{font-size:26px;font-weight:600;font-family:var(--mono);line-height:1}
+.stat-num.g{color:var(--green)}.stat-num.r{color:var(--red)}.stat-num.a{color:var(--amber)}.stat-num.b{color:var(--blue)}
+
+/* MAIN GRID */
+.main{display:grid;grid-template-columns:1fr 296px;gap:8px;padding:0 16px 16px}
+
+/* CAMERAS */
+.cam-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.cam{background:var(--surf);border:1px solid var(--border);border-radius:8px;overflow:hidden;position:relative;transition:border-color .2s}
+.cam.alert-crowd{border-color:var(--amber)}
+.cam.alert-fall{border-color:var(--red)}
+.cam-head{display:flex;align-items:center;justify-content:space-between;padding:6px 8px;background:var(--surf2);border-bottom:0.5px solid var(--border)}
+.cam-id{font-family:var(--mono);font-size:10px;color:var(--text2)}
+.cam-st{font-family:var(--mono);font-size:10px;display:flex;align-items:center;gap:4px}
+.st-dot{width:5px;height:5px;border-radius:50%;background:var(--green)}
+
+/* CAM SCREEN */
+.cam-screen{position:relative;height:155px;background:#070a0f;overflow:hidden}
+.cam-svg{position:absolute;inset:0;width:100%;height:100%}
+.scanline{position:absolute;inset:0;background:repeating-linear-gradient(transparent 0px,transparent 3px,rgba(0,0,0,.07) 3px,rgba(0,0,0,.07) 4px);pointer-events:none;z-index:3}
+.scan-beam{position:absolute;top:0;left:0;width:100%;height:2px;background:rgba(88,166,255,.12);animation:scanDown 5s linear infinite;pointer-events:none;z-index:4}
+@keyframes scanDown{0%{top:-2px}100%{top:100%}}
+.cam-badge{position:absolute;top:6px;right:6px;font-family:var(--mono);font-size:9px;padding:3px 8px;border-radius:4px;color:#fff;z-index:8;font-weight:600;letter-spacing:.5px;display:none}
+.cam-badge.crowd{background:var(--amber);color:#1a0f00;animation:bdgBlink .9s ease infinite}
+.cam-badge.fall{background:var(--red);animation:bdgBlink .9s ease infinite}
+@keyframes bdgBlink{0%,100%{opacity:1}50%{opacity:.5}}
+.cam-foot{position:absolute;bottom:0;left:0;right:0;padding:3px 8px;background:rgba(0,0,0,.6);display:flex;justify-content:space-between;z-index:6}
+.cam-foot span{font-family:var(--mono);font-size:8px;color:#2a4a6a}
+.flash-overlay{position:absolute;inset:0;border-radius:7px;pointer-events:none;z-index:9;display:none}
+.cam.flashing .flash-overlay{display:block;animation:flashAnim .7s ease forwards}
+@keyframes flashAnim{0%{box-shadow:inset 0 0 0 3px var(--fc,#f85149);opacity:1}100%{box-shadow:inset 0 0 0 0px var(--fc,#f85149);opacity:0}}
+
+/* SIDEBAR */
+.sidebar{display:flex;flex-direction:column;gap:8px}
+.panel{background:var(--surf);border:0.5px solid var(--border);border-radius:8px;padding:12px}
+.panel-title{font-family:var(--mono);font-size:10px;letter-spacing:.8px;color:var(--text2);text-transform:uppercase;margin-bottom:10px}
+
+/* EVENT LOG */
+.evt-list{max-height:260px;overflow-y:auto}
+.evt-list::-webkit-scrollbar{width:3px}
+.evt-list::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
+.evt{display:flex;gap:8px;padding:7px 0;border-bottom:0.5px solid var(--border);align-items:flex-start}
+.evt:last-child{border-bottom:none}
+.evt.new{animation:evtIn .3s ease}
+@keyframes evtIn{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}
+.evt-ic{width:24px;height:24px;border-radius:5px;display:flex;align-items:center;justify-content:center;font-size:12px;flex-shrink:0}
+.evt-ic.crowd{background:var(--bg-amber);color:var(--amber)}
+.evt-ic.fall{background:var(--bg-red);color:var(--red)}
+.evt-ic.ok{background:var(--bg-green);color:var(--green)}
+.evt-body{flex:1;min-width:0}
+.evt-title{font-size:11px;font-weight:500;color:var(--text);margin-bottom:1px}
+.evt-sub{font-family:var(--mono);font-size:9px;color:var(--text2)}
+.evt-time{font-family:var(--mono);font-size:9px;color:var(--text3);margin-top:2px}
+
+/* METRICS */
+.mrow{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:3px}
+.mlabel{font-size:11px;color:var(--text2)}
+.mval{font-family:var(--mono);font-size:11px;color:var(--text)}
+.mbar{height:5px;background:var(--surf2);border-radius:3px;margin-bottom:9px;overflow:hidden;border:0.5px solid var(--border)}
+.mfill{height:100%;border-radius:3px}
+
+/* MODAL */
+.backdrop{display:none;position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:1000;align-items:center;justify-content:center}
+.backdrop.open{display:flex}
+.modal{background:var(--surf);border:0.5px solid var(--border);border-radius:10px;width:390px;max-width:95vw;overflow:hidden;animation:mIn .25s ease}
+@keyframes mIn{from{opacity:0;transform:scale(.95)}to{opacity:1;transform:scale(1)}}
+.modal-hdr{padding:12px 14px;border-bottom:0.5px solid var(--border);display:flex;align-items:center;justify-content:space-between}
+.modal-title{font-size:13px;font-weight:600;font-family:var(--mono);display:flex;align-items:center;gap:8px}
+.modal-sev{font-size:9px;padding:2px 8px;border-radius:3px;font-weight:600;letter-spacing:.5px}
+.mcl{background:none;border:none;color:var(--text2);cursor:pointer;font-size:16px;padding:4px 6px;border-radius:4px}
+.mcl:hover{background:var(--surf2);color:var(--text)}
+.modal-body{padding:14px}
+.modal-row{display:flex;justify-content:space-between;padding:6px 0;border-bottom:0.5px solid var(--border);font-size:12px}
+.modal-row:last-child{border-bottom:none}
+.mkey{color:var(--text2)}
+.mval2{font-family:var(--mono);color:var(--text)}
+.modal-foot{display:flex;gap:8px;padding:10px 14px;border-top:0.5px solid var(--border);background:var(--surf2)}
+.mbtn{padding:7px 14px;border-radius:6px;font-size:11px;cursor:pointer;font-family:var(--mono);transition:.15s;border:0.5px solid var(--border)}
+.mbtn-danger{background:var(--red);border-color:var(--red);color:#fff}
+.mbtn-danger:hover{opacity:.85}
+.mbtn-sec{background:none;color:var(--text2)}
+.mbtn-sec:hover{background:var(--surf);color:var(--text)}
+</style>
+</head>
+<body>
+
+<!-- HEADER -->
+<header class="hdr">
+  <div class="hdr-l">
+    <div class="dot"></div>
+    <span class="logo">VISIONGUARD</span>
+    <span class="live-badge"><span class="dot"></span>LIVE</span>
+  </div>
+  <div class="hdr-r">
+    <span class="hdr-meta" id="clock">--:--:--</span>
+    <span class="hdr-meta" style="color:var(--text3)">K.J. Somaiya SOE</span>
+  </div>
+</header>
+
+<!-- LEGEND BAR -->
+<div class="info-bar">
+  <span style="display:flex;gap:14px;align-items:center">
+    <span class="leg"><span class="swatch" style="background:var(--amber)"></span>Crowd Gathering</span>
+    <span class="leg"><span class="swatch" style="background:var(--red)"></span>Fall Detected</span>
+  </span>
+  <span id="backend-status" style="color:var(--text3)">● Connecting to backend...</span>
+</div>
+
+<!-- STATS -->
+<div class="stats">
+  <div class="stat"><div class="stat-lbl">CAMERAS ONLINE</div><div class="stat-num g">4 / 4</div></div>
+  <div class="stat"><div class="stat-lbl">CROWD ALERTS</div><div class="stat-num r" id="alert-count">0</div></div>
+  <div class="stat"><div class="stat-lbl">FRAMES PROCESSED</div><div class="stat-num a" id="frame-count">0</div></div>
+  <div class="stat"><div class="stat-lbl">PERSONS DETECTED</div><div class="stat-num b" id="person-count">0</div></div>
+</div>
+
+<!-- MAIN -->
+<div class="main">
+
+  <!-- CAMERA GRID -->
+  <div class="cam-grid">
+
+    <!-- CAM-01 -->
+    <div class="cam" id="cam-1">
+      <div class="cam-head">
+        <span class="cam-id">CAM-01 · Main Gate</span>
+        <span class="cam-st" id="st-1"><span class="st-dot"></span><span style="color:var(--green)">Normal</span></span>
+      </div>
+      <div class="cam-screen">
+        <svg class="cam-svg" viewBox="0 0 280 150" xmlns="http://www.w3.org/2000/svg">
+          <rect width="280" height="150" fill="#070a0f"/>
+          <rect x="0" y="95" width="280" height="55" fill="#0c1018"/>
+          <rect x="75" y="8" width="130" height="87" fill="#0f1820" rx="2"/>
+          <rect x="120" y="50" width="40" height="45" fill="#09111d" rx="1"/>
+          <circle cx="45" cy="78" r="8" fill="#182030"/>
+          <rect x="39" y="86" width="12" height="20" fill="#182030" rx="1"/>
+          <line x1="39" y1="92" x2="30" y2="102" stroke="#182030" stroke-width="3" stroke-linecap="round"/>
+          <line x1="51" y1="92" x2="60" y2="102" stroke="#182030" stroke-width="3" stroke-linecap="round"/>
+          <circle cx="228" cy="80" r="7" fill="#182030"/>
+          <rect x="222" y="87" width="11" height="18" fill="#182030" rx="1"/>
+          <line x1="0" y1="95" x2="280" y2="95" stroke="#111e2d" stroke-width="1"/>
+          <text x="4" y="147" fill="#1a3050" font-size="7" font-family="monospace">YOLOv8 · CAM-01 · MAIN-GATE</text>
+        </svg>
+        <div class="cam-badge" id="bdg-1"></div>
+        <div class="flash-overlay" id="fl-1"></div>
+        <div class="scanline"></div>
+        <div class="scan-beam" style="animation-delay:0s"></div>
+        <div class="cam-foot"><span>YOLOv8 · 24FPS</span><span id="ts-1">--:--:--</span></div>
+      </div>
+    </div>
+
+    <!-- CAM-02 -->
+    <div class="cam" id="cam-2">
+      <div class="cam-head">
+        <span class="cam-id">CAM-02 · Society Lobby</span>
+        <span class="cam-st" id="st-2"><span class="st-dot"></span><span style="color:var(--green)">Normal</span></span>
+      </div>
+      <div class="cam-screen">
+        <svg class="cam-svg" viewBox="0 0 280 150" xmlns="http://www.w3.org/2000/svg">
+          <rect width="280" height="150" fill="#070a0f"/>
+          <rect x="0" y="0" width="280" height="75" fill="#07090d"/>
+          <rect x="0" y="75" width="280" height="75" fill="#0c1018"/>
+          <line x1="0" y1="75" x2="280" y2="75" stroke="#111e2d" stroke-width="1"/>
+          <line x1="45" y1="75" x2="45" y2="150" stroke="#16253a" stroke-width="1" stroke-dasharray="6,4"/>
+          <line x1="100" y1="75" x2="100" y2="150" stroke="#16253a" stroke-width="1" stroke-dasharray="6,4"/>
+          <line x1="155" y1="75" x2="155" y2="150" stroke="#16253a" stroke-width="1" stroke-dasharray="6,4"/>
+          <line x1="210" y1="75" x2="210" y2="150" stroke="#16253a" stroke-width="1" stroke-dasharray="6,4"/>
+          <rect x="48" y="80" width="48" height="25" fill="#141e2c" rx="3"/>
+          <rect x="104" y="82" width="48" height="25" fill="#141e2c" rx="3"/>
+          <rect x="158" y="78" width="48" height="25" fill="#141e2c" rx="3"/>
+          <text x="4" y="147" fill="#1a3050" font-size="7" font-family="monospace">YOLOv8 · CAM-02 · LOBBY</text>
+        </svg>
+        <div class="cam-badge" id="bdg-2"></div>
+        <div class="flash-overlay" id="fl-2"></div>
+        <div class="scanline"></div>
+        <div class="scan-beam" style="animation-delay:1.25s"></div>
+        <div class="cam-foot"><span>YOLOv8 · 24FPS</span><span id="ts-2">--:--:--</span></div>
+      </div>
+    </div>
+
+    <!-- CAM-03 -->
+    <div class="cam" id="cam-3">
+      <div class="cam-head">
+        <span class="cam-id">CAM-03 · Garden Area</span>
+        <span class="cam-st" id="st-3"><span class="st-dot"></span><span style="color:var(--green)">Normal</span></span>
+      </div>
+      <div class="cam-screen">
+        <svg class="cam-svg" viewBox="0 0 280 150" xmlns="http://www.w3.org/2000/svg">
+          <rect width="280" height="150" fill="#070a0f"/>
+          <rect x="0" y="0" width="280" height="22" fill="#060a0f"/>
+          <rect x="0" y="118" width="280" height="32" fill="#0a0e14"/>
+          <line x1="55" y1="22" x2="55" y2="118" stroke="#111820" stroke-width="1"/>
+          <line x1="225" y1="22" x2="225" y2="118" stroke="#111820" stroke-width="1"/>
+          <circle cx="140" cy="60" r="9" fill="#1a2030"/>
+          <rect x="134" y="69" width="12" height="22" fill="#1a2030" rx="1"/>
+          <line x1="134" y1="76" x2="124" y2="90" stroke="#1a2030" stroke-width="3.5" stroke-linecap="round"/>
+          <line x1="146" y1="76" x2="156" y2="90" stroke="#1a2030" stroke-width="3.5" stroke-linecap="round"/>
+          <text x="4" y="147" fill="#1a3050" font-size="7" font-family="monospace">YOLOv8-Pose · CAM-03 · GARDEN</text>
+        </svg>
+        <div class="cam-badge" id="bdg-3"></div>
+        <div class="flash-overlay" id="fl-3"></div>
+        <div class="scanline"></div>
+        <div class="scan-beam" style="animation-delay:2.5s"></div>
+        <div class="cam-foot"><span>YOLOv8-Pose · 24FPS</span><span id="ts-3">--:--:--</span></div>
+      </div>
+    </div>
+
+    <!-- CAM-04 -->
+    <div class="cam" id="cam-4">
+      <div class="cam-head">
+        <span class="cam-id">CAM-04 · Parking Lot</span>
+        <span class="cam-st" id="st-4"><span class="st-dot"></span><span style="color:var(--green)">Normal</span></span>
+      </div>
+      <div class="cam-screen">
+        <svg class="cam-svg" viewBox="0 0 280 150" xmlns="http://www.w3.org/2000/svg">
+          <rect width="280" height="150" fill="#070a0f"/>
+          <rect x="0" y="86" width="280" height="44" fill="#0a0f14"/>
+          <rect x="18" y="50" width="75" height="38" fill="#111820" rx="2"/>
+          <rect x="108" y="53" width="75" height="38" fill="#111820" rx="2"/>
+          <rect x="198" y="50" width="75" height="38" fill="#111820" rx="2"/>
+          <circle cx="45" cy="67" r="7" fill="#1e2a3a"/>
+          <circle cx="145" cy="70" r="7" fill="#1e2a3a"/>
+          <circle cx="235" cy="67" r="7" fill="#1e2a3a"/>
+          <text x="4" y="147" fill="#1a3050" font-size="7" font-family="monospace">YOLOv8 · CAM-04 · PARKING</text>
+        </svg>
+        <div class="cam-badge" id="bdg-4"></div>
+        <div class="flash-overlay" id="fl-4"></div>
+        <div class="scanline"></div>
+        <div class="scan-beam" style="animation-delay:3.75s"></div>
+        <div class="cam-foot"><span>YOLOv8 · 24FPS</span><span id="ts-4">--:--:--</span></div>
+      </div>
+    </div>
+
+  </div><!-- /cam-grid -->
+
+  <!-- SIDEBAR -->
+  <div class="sidebar">
+
+    <!-- EVENT LOG -->
+    <div class="panel">
+      <div class="panel-title">Alert Log</div>
+      <div class="evt-list" id="evt-list">
+        <div class="evt">
+          <div class="evt-ic ok">✓</div>
+          <div class="evt-body">
+            <div class="evt-title">System Initialised</div>
+            <div class="evt-sub">All 4 cameras online · Models loaded</div>
+            <div class="evt-time" id="init-time">--:--</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- MODEL INFO -->
+    <div class="panel">
+      <div class="panel-title">Detection Modules</div>
+      <div class="mrow"><span class="mlabel">Crowd Detection</span><span class="mval" style="color:var(--green)">Active</span></div>
+      <div class="mbar"><div class="mfill" style="width:100%;background:var(--green)"></div></div>
+      <div class="mrow"><span class="mlabel">Zone Density Grid</span><span class="mval" style="color:var(--green)">3×3</span></div>
+      <div class="mbar"><div class="mfill" style="width:100%;background:var(--amber)"></div></div>
+      <div class="mrow"><span class="mlabel">Fall Detection</span><span class="mval" style="color:var(--green)">Active</span></div>
+      <div class="mbar"><div class="mfill" style="width:100%;background:var(--red)"></div></div>
+      <div class="mrow"><span class="mlabel">Model</span><span class="mval">YOLOv8n + Pose</span></div>
+      <div class="mbar"><div class="mfill" style="width:75%;background:var(--blue)"></div></div>
+    </div>
+
+    <!-- LIVE DENSITY -->
+    <div class="panel">
+      <div class="panel-title">Live Zone Density</div>
+      <div class="mrow"><span class="mlabel">Current Person Count</span><span class="mval" id="live-persons">0</span></div>
+      <div class="mrow"><span class="mlabel">Max Zone Density</span><span class="mval" id="live-density">0</span></div>
+      <div class="mrow"><span class="mlabel">Status</span><span class="mval" id="live-status" style="color:var(--green)">Clear</span></div>
+    </div>
+
+  </div><!-- /sidebar -->
+</div><!-- /main -->
+
+<!-- MODAL -->
+<div class="backdrop" id="backdrop" onclick="if(event.target.id==='backdrop') closeModal()">
+  <div class="modal">
+    <div class="modal-hdr">
+      <div class="modal-title">
+        <span id="m-icon">⚠</span>
+        <span id="m-title">Alert</span>
+        <span class="modal-sev" id="m-sev"></span>
+      </div>
+      <button class="mcl" onclick="closeModal()">✕</button>
+    </div>
+    <div class="modal-body" id="m-body"></div>
+    <div class="modal-foot">
+      <button class="mbtn mbtn-danger" onclick="acknowledgeAlert()">Acknowledge &amp; Dispatch</button>
+      <button class="mbtn mbtn-sec" onclick="closeModal()">Dismiss</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── UTILS ─────────────────────────────────────────────────────────
+function p(n){ return n<10?'0'+n:''+n; }
+function ts(){ const n=new Date(); return p(n.getHours())+':'+p(n.getMinutes())+':'+p(n.getSeconds()); }
+function tsShort(){ const n=new Date(); return p(n.getHours())+':'+p(n.getMinutes()); }
+
+// ── STATE ─────────────────────────────────────────────────────────
+let activeAlerts = {};   // camId -> type ('crowd' | 'fall')
+let currentModal = null;
+let backendConnected = false;
+let lastAlertTimestamp = null;
+let lastFallTimestamp = null;
+
+// ── CLOCK + TIMESTAMPS ────────────────────────────────────────────
+setInterval(()=>{ document.getElementById('clock').textContent = ts(); }, 1000);
+setInterval(()=>{ for(let i=1;i<=4;i++){ const el=document.getElementById('ts-'+i); if(el) el.textContent=ts(); } }, 1000);
+
+window.addEventListener('DOMContentLoaded', ()=>{
+  document.getElementById('clock').textContent = ts();
+  document.getElementById('init-time').textContent = tsShort();
+});
+
+// ── FLASH ─────────────────────────────────────────────────────────
+function flashCam(cam, color){
+  const c = document.getElementById('cam-'+cam);
+  const f = document.getElementById('fl-'+cam);
+  if(!c||!f) return;
+  c.style.setProperty('--fc', color);
+  c.classList.add('flashing'); f.style.display='block';
+  setTimeout(()=>{ c.classList.remove('flashing'); f.style.display='none'; }, 750);
+}
+
+// ── TRIGGER ALERT ─────────────────────────────────────────────────
+function triggerAlert(cam, type, personCount, zoneDensity, timestamp){
+  if(activeAlerts[cam]) return;
+  activeAlerts[cam] = type;
+
+  const isCrowd = type === 'crowd';
+  const color = isCrowd ? 'var(--amber)' : 'var(--red)';
+  const colorHex = isCrowd ? '#e3b341' : '#f85149';
+  const label = isCrowd ? '⚠ CROWD' : '⚠ FALL';
+  const title = isCrowd ? 'Crowd Gathering Detected' : 'Fall Detected';
+  const icon = isCrowd ? '👥' : '🆘';
+  const sev = isCrowd ? 'HIGH' : 'CRITICAL';
+  const action = isCrowd ? 'Deploy security to disperse crowd' : 'Send medical assistance immediately';
+
+  // flash + border
+  flashCam(cam, colorHex);
+  const camEl = document.getElementById('cam-'+cam);
+  if(camEl) camEl.className = 'cam alert-' + type;
+
+  // badge
+  const bdg = document.getElementById('bdg-'+cam);
+  if(bdg){ bdg.className = 'cam-badge '+type; bdg.textContent = label; bdg.style.display='block'; }
+
+  // status text
+  const stEl = document.getElementById('st-'+cam);
+  if(stEl) stEl.innerHTML = `<span class="st-dot" style="background:${colorHex}"></span><span style="color:${colorHex}">Alert</span>`;
+
+  // beep
+  playBeep(type);
+
+  // event log
+  addToLog(type, icon, title, cam, personCount, zoneDensity, timestamp);
+
+  // modal
+  setTimeout(()=> showModal(cam, type, icon, title, sev, colorHex, action, personCount, zoneDensity, timestamp), 500);
+
+  // auto clear after 30s
+  setTimeout(()=> clearAlert(cam), 30000);
+}
+
+// ── CLEAR ALERT ───────────────────────────────────────────────────
+function clearAlert(cam){
+  delete activeAlerts[cam];
+  const bdg = document.getElementById('bdg-'+cam);
+  if(bdg){ bdg.style.display='none'; }
+  const camEl = document.getElementById('cam-'+cam);
+  if(camEl) camEl.className = 'cam';
+  const stEl = document.getElementById('st-'+cam);
+  if(stEl) stEl.innerHTML = `<span class="st-dot"></span><span style="color:var(--green)">Normal</span>`;
+}
+
+// ── SOUND ─────────────────────────────────────────────────────────
+function playBeep(type){
+  try{
+    const ctx = new(window.AudioContext||window.webkitAudioContext)();
+    const osc = ctx.createOscillator();
+    const g = ctx.createGain();
+    osc.connect(g); g.connect(ctx.destination);
+    if(type === 'fall'){
+      osc.type='square';
+      osc.frequency.setValueAtTime(1100, ctx.currentTime);
+      osc.frequency.setValueAtTime(800, ctx.currentTime+.12);
+    } else {
+      osc.type='sine';
+      osc.frequency.setValueAtTime(620, ctx.currentTime);
+      osc.frequency.linearRampToValueAtTime(820, ctx.currentTime+.25);
+    }
+    g.gain.setValueAtTime(.12, ctx.currentTime);
+    g.gain.exponentialRampToValueAtTime(.001, ctx.currentTime+.55);
+    osc.start(ctx.currentTime); osc.stop(ctx.currentTime+.6);
+  }catch(e){}
+}
+
+// ── EVENT LOG ─────────────────────────────────────────────────────
+function addToLog(type, icon, title, cam, personCount, zoneDensity, timestamp){
+  const list = document.getElementById('evt-list');
+  if(!list) return;
+  const evt = document.createElement('div');
+  evt.className = 'evt new';
+  evt.dataset.ts = timestamp;
+  const sub = type === 'crowd'
+    ? `CAM-0${cam} · ${personCount} persons · zone density ${zoneDensity}`
+    : `CAM-0${cam} · Fall detected · pose analysis`;
+  evt.innerHTML = `
+    <div class="evt-ic ${type}">${icon}</div>
+    <div class="evt-body">
+      <div class="evt-title">${title}</div>
+      <div class="evt-sub">${sub}</div>
+      <div class="evt-time">${timestamp || tsShort()}</div>
+    </div>`;
+  list.insertBefore(evt, list.firstChild);
+  while(list.children.length > 15) list.removeChild(list.lastChild);
+}
+
+// ── MODAL ─────────────────────────────────────────────────────────
+function showModal(cam, type, icon, title, sev, color, action, personCount, zoneDensity, timestamp){
+  currentModal = cam;
+  document.getElementById('m-icon').textContent = icon;
+  document.getElementById('m-title').textContent = title;
+  const sevEl = document.getElementById('m-sev');
+  sevEl.textContent = sev;
+  sevEl.style.background = color;
+  sevEl.style.color = type === 'crowd' ? '#1a0f00' : '#fff';
+
+  const extra = type === 'crowd'
+    ? `<div class="modal-row"><span class="mkey">Person Count</span><span class="mval2">${personCount}</span></div>
+       <div class="modal-row"><span class="mkey">Zone Density</span><span class="mval2">${zoneDensity}</span></div>`
+    : `<div class="modal-row"><span class="mkey">Detection Method</span><span class="mval2">Pose aspect ratio</span></div>`;
+
+  document.getElementById('m-body').innerHTML = `
+    <div class="modal-row"><span class="mkey">Camera</span><span class="mval2">CAM-0${cam}</span></div>
+    <div class="modal-row"><span class="mkey">Alert Type</span><span class="mval2" style="color:${color}">${title}</span></div>
+    ${extra}
+    <div class="modal-row"><span class="mkey">Timestamp</span><span class="mval2">${timestamp || ts()}</span></div>
+    <div class="modal-row"><span class="mkey">Recommended Action</span><span class="mval2">${action}</span></div>`;
+
+  document.getElementById('backdrop').classList.add('open');
+}
+
+function closeModal(){ document.getElementById('backdrop').classList.remove('open'); currentModal = null; }
+
+function acknowledgeAlert(){
+  if(currentModal) clearAlert(currentModal);
+  const list = document.getElementById('evt-list');
+  if(list){
+    const evt = document.createElement('div');
+    evt.className = 'evt new';
+    evt.innerHTML = `
+      <div class="evt-ic ok">✓</div>
+      <div class="evt-body">
+        <div class="evt-title">Alert Acknowledged</div>
+        <div class="evt-sub">Security dispatched · CAM-0${currentModal||1}</div>
+        <div class="evt-time">${tsShort()}</div>
+      </div>`;
+    list.insertBefore(evt, list.firstChild);
+  }
+  closeModal();
+}
+
+// ── BACKEND POLLING ───────────────────────────────────────────────
+async function pollBackend(){
+  try {
+    const [stats, latest, recentCrowd, latestFall] = await Promise.all([
+      fetch('http://localhost:8000/stats').then(r => r.json()),
+      fetch('http://localhost:8000/latest').then(r => r.json()),
+      fetch('http://localhost:8000/alerts/recent').then(r => r.json()),
+      fetch('http://localhost:8000/fall/latest').then(r => r.json())
+    ]);
+
+    // backend is alive
+    if(!backendConnected){
+      backendConnected = true;
+      document.getElementById('backend-status').textContent = '● Backend connected';
+      document.getElementById('backend-status').style.color = 'var(--green)';
+    }
+
+    // update stat cards
+    document.getElementById('alert-count').textContent = stats.alert_count;
+    document.getElementById('frame-count').textContent = stats.frame_count.toLocaleString();
+    document.getElementById('person-count').textContent = stats.person_count.toLocaleString();
+
+    // live density panel
+    document.getElementById('live-persons').textContent = latest.person_count;
+    document.getElementById('live-density').textContent = latest.zone_density;
+    const statusEl = document.getElementById('live-status');
+    if(latest.is_alert){
+      statusEl.textContent = '⚠ Crowd Alert';
+      statusEl.style.color = 'var(--amber)';
+    } else {
+      statusEl.textContent = 'Clear';
+      statusEl.style.color = 'var(--green)';
+    }
+
+    // trigger crowd alert on CAM-01
+    if(latest.is_alert && !activeAlerts[1]){
+      triggerAlert(1, 'crowd', latest.person_count, latest.zone_density, latest.timestamp);
+    } else if(!latest.is_alert && activeAlerts[1] === 'crowd'){
+      clearAlert(1);
+    }
+
+    // new crowd alert in log
+    if(recentCrowd.length > 0){
+      const top = recentCrowd[0];
+      if(top.is_alert && top.timestamp !== lastAlertTimestamp){
+        lastAlertTimestamp = top.timestamp;
+      }
+    }
+
+    // fall detection on CAM-03
+    if(latestFall && latestFall.is_fall && latestFall.timestamp !== lastFallTimestamp){
+      lastFallTimestamp = latestFall.timestamp;
+      if(!activeAlerts[3]){
+        triggerAlert(3, 'fall', 0, 0, latestFall.timestamp);
+      }
+    } else if(latestFall && !latestFall.is_fall && activeAlerts[3] === 'fall'){
+      clearAlert(3);
+    }
+
+  } catch(e) {
+    if(backendConnected){
+      backendConnected = false;
+      document.getElementById('backend-status').textContent = '● Backend disconnected — running in demo mode';
+      document.getElementById('backend-status').style.color = 'var(--red)';
+    }
+  }
+}
+
+setInterval(pollBackend, 2000);
+pollBackend();
+</script>
+</body>
+</html>

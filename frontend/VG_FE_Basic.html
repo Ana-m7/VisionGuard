@@ -1,0 +1,825 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>VisionGuard · Live Surveillance</title>
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg:#0d1117; --surf:#161b22; --surf2:#1c2128; --border:#30363d;
+  --text:#e6edf3; --text2:#8b949e; --text3:#6e7681;
+  --green:#3fb950; --red:#f85149; --amber:#e3b341; --blue:#58a6ff; --orange:#ff7b54;
+  --bg-green:rgba(63,185,80,0.12); --bg-red:rgba(248,81,73,0.12);
+  --bg-amber:rgba(227,179,65,0.12); --bg-orange:rgba(255,123,84,0.12);
+  --cam-bg:#070a0f;
+  --mono:'Share Tech Mono',monospace;
+  --sans:'DM Sans',sans-serif;
+}
+[data-theme="light"] {
+  --bg:#f0f2f5; --surf:#ffffff; --surf2:#e8eaed; --border:#d0d7de;
+  --text:#1f2328; --text2:#57606a; --text3:#8c959f;
+  --green:#1a7f37; --red:#cf222e; --amber:#9a6700; --blue:#0969da; --orange:#bc4c00;
+  --bg-green:rgba(26,127,55,0.1); --bg-red:rgba(207,34,46,0.1);
+  --bg-amber:rgba(154,103,0,0.1); --bg-orange:rgba(188,76,0,0.1);
+  --cam-bg:#070a0f;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;font-family:var(--sans);background:var(--bg);color:var(--text);font-size:13px;line-height:1.5}
+
+/* ── HEADER ── */
+.hdr{background:var(--surf);border-bottom:0.5px solid var(--border);padding:0 16px;height:46px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:200}
+.hdr-l{display:flex;align-items:center;gap:10px}
+.logo{font-family:var(--mono);font-size:15px;color:var(--blue);letter-spacing:2px;user-select:none}
+.live-badge{display:flex;align-items:center;gap:5px;font-size:10px;padding:2px 9px;border-radius:20px;border:0.5px solid var(--green);color:var(--green);background:var(--bg-green);font-family:var(--mono)}
+.dot{width:6px;height:6px;border-radius:50%;background:var(--green);animation:blink 1.4s infinite;flex-shrink:0}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:0.2}}
+.hdr-r{display:flex;align-items:center;gap:12px}
+.hdr-meta{font-family:var(--mono);font-size:11px;color:var(--text2)}
+.theme-btn{display:flex;align-items:center;gap:6px;padding:5px 11px;border-radius:6px;border:0.5px solid var(--border);background:var(--surf2);color:var(--text2);cursor:pointer;font-size:11px;font-family:var(--mono);transition:.2s}
+.theme-btn:hover{color:var(--text);border-color:var(--blue)}
+
+/* ── INFO BAR ── */
+.info-bar{display:flex;align-items:center;justify-content:space-between;padding:6px 16px;background:var(--surf);border-bottom:0.5px solid var(--border);font-size:10px;color:var(--text3);font-family:var(--mono)}
+.info-bar span{display:flex;align-items:center;gap:14px}
+.leg{display:flex;align-items:center;gap:5px}
+.swatch{width:9px;height:9px;border-radius:2px;flex-shrink:0}
+
+/* ── STATS ── */
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;padding:10px 16px}
+.stat{background:var(--surf);border:0.5px solid var(--border);border-radius:8px;padding:11px 14px}
+.stat-lbl{font-size:10px;font-family:var(--mono);color:var(--text2);letter-spacing:.5px;margin-bottom:5px}
+.stat-num{font-size:26px;font-weight:600;font-family:var(--mono);line-height:1;transition:transform .2s}
+.stat-num.g{color:var(--green)}.stat-num.r{color:var(--red)}.stat-num.a{color:var(--amber)}.stat-num.b{color:var(--blue)}
+
+/* ── MAIN GRID ── */
+.main{display:grid;grid-template-columns:1fr 296px;gap:8px;padding:0 16px 16px}
+
+/* ── CAMERAS ── */
+.cam-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.cam{background:var(--surf);border:1px solid var(--border);border-radius:8px;overflow:hidden;position:relative;transition:border-color .2s}
+.cam.a-fight{border-color:var(--red)}
+.cam.a-gathering{border-color:var(--amber)}
+.cam.a-crash{border-color:var(--orange)}
+.cam-head{display:flex;align-items:center;justify-content:space-between;padding:6px 8px;background:var(--surf2);border-bottom:0.5px solid var(--border)}
+.cam-id{font-family:var(--mono);font-size:10px;color:var(--text2)}
+.cam-controls{display:flex;align-items:center;gap:6px}
+.cam-st{font-family:var(--mono);font-size:10px;display:flex;align-items:center;gap:4px}
+.st-dot{width:5px;height:5px;border-radius:50%;background:var(--green)}
+.trig-btn{font-family:var(--mono);font-size:9px;padding:2px 7px;border-radius:4px;border:0.5px solid var(--border);background:none;color:var(--text3);cursor:pointer;transition:.15s}
+.trig-btn:hover{border-color:var(--red);color:var(--red);background:var(--bg-red)}
+
+/* ── CAM SCREEN ── */
+.cam-screen{position:relative;height:155px;background:var(--cam-bg);overflow:hidden}
+.cam-svg{position:absolute;inset:0;width:100%;height:100%}
+.scanline{position:absolute;inset:0;background:repeating-linear-gradient(transparent 0px,transparent 3px,rgba(0,0,0,.07) 3px,rgba(0,0,0,.07) 4px);pointer-events:none;z-index:3}
+.scan-beam{position:absolute;top:0;left:0;width:100%;height:2px;background:rgba(88,166,255,.12);animation:scanDown 5s linear infinite;pointer-events:none;z-index:4}
+@keyframes scanDown{0%{top:-2px}100%{top:100%}}
+
+/* ── DETECTION BOX ── */
+.det-box{position:absolute;border:2px solid;border-radius:3px;z-index:5;display:none;animation:boxPulse 1.6s ease infinite}
+@keyframes boxPulse{0%,100%{opacity:1}50%{opacity:.6}}
+.det-lbl{position:absolute;top:-17px;left:-1px;font-family:var(--mono);font-size:8px;padding:2px 5px;border-radius:2px;color:#fff;white-space:nowrap;letter-spacing:.5px}
+.det-box.gathering{border-color:#e3b341}.det-box.gathering .det-lbl{background:#e3b341;color:#1a0f00}
+.det-box.fight{border-color:#f85149}.det-box.fight .det-lbl{background:#f85149}
+.det-box.crash{border-color:#ff7b54}.det-box.crash .det-lbl{background:#ff7b54}
+
+/* ── CAM BADGE / OVERLAY ── */
+.cam-badge{position:absolute;top:6px;right:6px;font-family:var(--mono);font-size:9px;padding:3px 8px;border-radius:4px;color:#fff;z-index:8;display:none;font-weight:600;animation:bdgBlink .9s ease infinite;letter-spacing:.5px}
+@keyframes bdgBlink{0%,100%{opacity:1}50%{opacity:.5}}
+.cam-badge.gathering{background:#e3b341;color:#1a0f00}
+.cam-badge.fight{background:#f85149}
+.cam-badge.crash{background:#ff7b54}
+.cam-conf{position:absolute;bottom:20px;left:6px;font-family:var(--mono);font-size:8px;color:#2a4a6a;z-index:6;display:none}
+.cam-foot{position:absolute;bottom:0;left:0;right:0;padding:3px 8px;background:rgba(0,0,0,.6);display:flex;justify-content:space-between;z-index:6}
+.cam-foot span{font-family:var(--mono);font-size:8px;color:#2a4a6a}
+.clear-btn{position:absolute;top:6px;left:6px;font-family:var(--mono);font-size:8px;padding:2px 7px;border-radius:3px;border:0.5px solid var(--border);background:rgba(0,0,0,.7);color:var(--text3);cursor:pointer;z-index:8;display:none;transition:.15s}
+.clear-btn:hover{border-color:var(--green);color:var(--green)}
+.flash-overlay{position:absolute;inset:0;border-radius:7px;pointer-events:none;z-index:9;display:none}
+.cam.flashing .flash-overlay{display:block;animation:flashAnim .7s ease forwards}
+@keyframes flashAnim{0%{box-shadow:inset 0 0 0 3px var(--fc,#f85149);opacity:1}100%{box-shadow:inset 0 0 0 0 var(--fc,#f85149);opacity:0}}
+
+/* ── SIDEBAR ── */
+.sidebar{display:flex;flex-direction:column;gap:8px}
+.panel{background:var(--surf);border:0.5px solid var(--border);border-radius:8px;padding:12px}
+.panel-title{font-family:var(--mono);font-size:10px;letter-spacing:.8px;color:var(--text2);text-transform:uppercase;margin-bottom:10px}
+.tabs{display:flex;margin-bottom:10px;border-bottom:0.5px solid var(--border)}
+.tab{font-family:var(--mono);font-size:10px;padding:5px 10px;cursor:pointer;color:var(--text2);border-bottom:2px solid transparent;transition:.15s}
+.tab.active{color:var(--blue);border-bottom-color:var(--blue)}
+.evt-list{max-height:205px;overflow-y:auto}
+.evt-list::-webkit-scrollbar{width:3px}
+.evt-list::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
+.evt{display:flex;gap:8px;padding:7px 0;border-bottom:0.5px solid var(--border);align-items:flex-start}
+.evt:last-child{border-bottom:none}
+.evt.new{animation:evtIn .3s ease}
+@keyframes evtIn{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}
+.evt-ic{width:24px;height:24px;border-radius:5px;display:flex;align-items:center;justify-content:center;font-size:12px;flex-shrink:0;font-family:var(--mono);font-weight:600}
+.evt-ic.gathering{background:var(--bg-amber);color:var(--amber)}
+.evt-ic.fight{background:var(--bg-red);color:var(--red)}
+.evt-ic.crash{background:var(--bg-orange);color:var(--orange)}
+.evt-ic.ok{background:var(--bg-green);color:var(--green)}
+.evt-body{flex:1;min-width:0}
+.evt-title{font-size:11px;font-weight:500;color:var(--text);margin-bottom:1px}
+.evt-sub{font-family:var(--mono);font-size:9px;color:var(--text2)}
+.evt-time{font-family:var(--mono);font-size:9px;color:var(--text3);margin-top:2px}
+.mrow{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:3px}
+.mlabel{font-size:11px;color:var(--text2)}
+.mval{font-family:var(--mono);font-size:11px;color:var(--text)}
+.mbar{height:5px;background:var(--surf2);border-radius:3px;margin-bottom:9px;overflow:hidden;border:0.5px solid var(--border)}
+.mfill{height:100%;border-radius:3px}
+.graph{height:60px}
+.graph svg{width:100%;height:100%;overflow:visible}
+
+/* ── MODAL ── */
+.backdrop{display:none;position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:1000;align-items:center;justify-content:center}
+.backdrop.open{display:flex}
+.modal{background:var(--surf);border:0.5px solid var(--border);border-radius:10px;width:390px;max-width:95vw;overflow:hidden;animation:mIn .25s ease}
+@keyframes mIn{from{opacity:0;transform:scale(.95)}to{opacity:1;transform:scale(1)}}
+.modal-hdr{padding:12px 14px;border-bottom:0.5px solid var(--border);display:flex;align-items:center;justify-content:space-between}
+.modal-title{font-size:13px;font-weight:600;font-family:var(--mono);display:flex;align-items:center;gap:8px}
+.modal-sev{font-size:9px;padding:2px 8px;border-radius:3px;font-weight:600;letter-spacing:.5px}
+.mcl{background:none;border:none;color:var(--text2);cursor:pointer;font-size:16px;padding:4px 6px;border-radius:4px;line-height:1}
+.mcl:hover{background:var(--surf2);color:var(--text)}
+.modal-prev{height:130px;background:var(--cam-bg);position:relative;overflow:hidden}
+.modal-prev svg{width:100%;height:100%}
+.modal-body{padding:14px}
+.modal-row{display:flex;justify-content:space-between;padding:6px 0;border-bottom:0.5px solid var(--border);font-size:12px}
+.modal-row:last-child{border-bottom:none}
+.mkey{color:var(--text2)}
+.mval2{font-family:var(--mono);color:var(--text)}
+.modal-foot{display:flex;gap:8px;padding:10px 14px;border-top:0.5px solid var(--border);background:var(--surf2)}
+.mbtn{padding:7px 14px;border-radius:6px;font-size:11px;cursor:pointer;font-family:var(--mono);transition:.15s;border:0.5px solid var(--border)}
+.mbtn-danger{background:var(--red);border-color:var(--red);color:#fff}
+.mbtn-danger:hover{opacity:.85}
+.mbtn-sec{background:none;color:var(--text2)}
+.mbtn-sec:hover{background:var(--surf);color:var(--text)}
+
+/* ── SIMULATION CONTROLS ── */
+.sim-bar{display:flex;align-items:center;gap:8px;padding:7px 16px;background:var(--surf);border-bottom:0.5px solid var(--border);font-size:10px;color:var(--text3);font-family:var(--mono)}
+.sim-btn{font-family:var(--mono);font-size:9px;padding:3px 10px;border-radius:4px;border:0.5px solid var(--border);background:var(--surf2);color:var(--text2);cursor:pointer;transition:.15s}
+.sim-btn:hover{border-color:var(--blue);color:var(--blue)}
+.sim-btn.active{border-color:var(--green);color:var(--green);background:var(--bg-green)}
+.sim-speed{display:flex;align-items:center;gap:6px;margin-left:auto}
+.sim-speed select{font-family:var(--mono);font-size:9px;background:var(--surf2);border:0.5px solid var(--border);color:var(--text2);padding:2px 6px;border-radius:4px;cursor:pointer}
+</style>
+</head>
+<body>
+
+<!-- HEADER -->
+<header class="hdr">
+  <div class="hdr-l">
+    <div class="dot"></div>
+    <span class="logo">VISIONGUARD</span>
+    <span class="live-badge"><span class="dot"></span>LIVE</span>
+  </div>
+  <div class="hdr-r">
+    <span class="hdr-meta" id="clock">--:--:--</span>
+    <span class="hdr-meta" style="color:var(--text3)">K.J. Somaiya SOE</span>
+    <button class="theme-btn" id="themeBtn" onclick="toggleTheme()">☾ Dark</button>
+  </div>
+</header>
+
+<!-- LEGEND + SIM CONTROLS -->
+<div class="info-bar">
+  <span>
+    <span class="leg"><span class="swatch" style="background:#e3b341"></span>Sudden Gathering</span>
+    <span class="leg"><span class="swatch" style="background:#f85149"></span>Fight / Altercation</span>
+    <span class="leg"><span class="swatch" style="background:#ff7b54"></span>Crash / Collision</span>
+  </span>
+  <span style="color:var(--text3)">Click ⚡ on any camera to manually trigger an alert</span>
+</div>
+<div class="sim-bar">
+  <span style="color:var(--text2)">AUTO-SIM:</span>
+  <button class="sim-btn active" id="simToggle" onclick="toggleSim()">● Running</button>
+  <button class="sim-btn" onclick="triggerAllCams()">⚡ Trigger All</button>
+  <button class="sim-btn" onclick="clearAllAlerts()">✕ Clear All</button>
+  <div class="sim-speed">
+    <span>Interval:</span>
+    <select id="simSpeed" onchange="updateSimSpeed()">
+      <option value="8000">Fast (8s)</option>
+      <option value="15000" selected>Normal (15s)</option>
+      <option value="30000">Slow (30s)</option>
+    </select>
+  </div>
+</div>
+
+<!-- STATS -->
+<div class="stats">
+  <div class="stat"><div class="stat-lbl">CAMERAS ONLINE</div><div class="stat-num g">4 / 4</div></div>
+  <div class="stat"><div class="stat-lbl">ALERTS TODAY</div><div class="stat-num r" id="alert-count">0</div></div>
+  <div class="stat"><div class="stat-lbl">FRAMES PROCESSED</div><div class="stat-num a" id="frame-count">14,820</div></div>
+</div>
+
+<!-- MAIN -->
+<div class="main">
+
+  <!-- CAMERA GRID -->
+  <div class="cam-grid">
+
+    <!-- CAM-01 -->
+    <div class="cam" id="cam-1">
+      <div class="cam-head">
+        <span class="cam-id">CAM-01 · Main Entrance</span>
+        <div class="cam-controls">
+          <span class="cam-st" id="st-1"><span class="st-dot"></span><span style="color:var(--green)">Normal</span></span>
+          <button class="trig-btn" onclick="manualTrigger(1)">⚡ Trigger</button>
+        </div>
+      </div>
+      <div class="cam-screen">
+        <svg class="cam-svg" viewBox="0 0 280 150" xmlns="http://www.w3.org/2000/svg">
+          <rect width="280" height="150" fill="#070a0f"/>
+          <rect x="0" y="95" width="280" height="55" fill="#0c1018"/>
+          <rect x="75" y="8" width="130" height="87" fill="#0f1820" rx="2"/>
+          <rect x="120" y="50" width="40" height="45" fill="#09111d" rx="1"/>
+          <rect x="122" y="52" width="17" height="43" fill="#0b1420"/>
+          <rect x="141" y="52" width="17" height="43" fill="#0b1420"/>
+          <rect x="82" y="16" width="28" height="20" fill="#0d1a2a" rx="1"/>
+          <rect x="120" y="16" width="40" height="20" fill="#0d1a2a" rx="1"/>
+          <rect x="170" y="16" width="28" height="20" fill="#0d1a2a" rx="1"/>
+          <circle cx="45" cy="78" r="8" fill="#182030"/>
+          <rect x="39" y="86" width="12" height="20" fill="#182030" rx="1"/>
+          <line x1="39" y1="92" x2="30" y2="102" stroke="#182030" stroke-width="3" stroke-linecap="round"/>
+          <line x1="51" y1="92" x2="60" y2="102" stroke="#182030" stroke-width="3" stroke-linecap="round"/>
+          <circle cx="228" cy="80" r="7" fill="#182030"/>
+          <rect x="222" y="87" width="11" height="18" fill="#182030" rx="1"/>
+          <line x1="0" y1="95" x2="280" y2="95" stroke="#111e2d" stroke-width="1"/>
+          <text x="4" y="147" fill="#1a3050" font-size="7" font-family="monospace">YOLOv8 · CAM-01 · MAIN-ENTRANCE</text>
+        </svg>
+        <div class="det-box" id="det-1"><div class="det-lbl" id="dlbl-1"></div></div>
+        <div class="cam-badge" id="bdg-1"></div>
+        <div class="cam-conf" id="conf-1"></div>
+        <div class="flash-overlay" id="fl-1"></div>
+        <div class="scanline"></div>
+        <div class="scan-beam" style="animation-delay:0s"></div>
+        <div class="cam-foot"><span>YOLOv8 · 24FPS</span><span id="ts-1"></span></div>
+        <button class="clear-btn" id="clr-1" onclick="clearAlert(1)">✕ Clear</button>
+      </div>
+    </div>
+
+    <!-- CAM-02 -->
+    <div class="cam" id="cam-2">
+      <div class="cam-head">
+        <span class="cam-id">CAM-02 · Parking Lot</span>
+        <div class="cam-controls">
+          <span class="cam-st" id="st-2"><span class="st-dot"></span><span style="color:var(--green)">Normal</span></span>
+          <button class="trig-btn" onclick="manualTrigger(2)">⚡ Trigger</button>
+        </div>
+      </div>
+      <div class="cam-screen">
+        <svg class="cam-svg" viewBox="0 0 280 150" xmlns="http://www.w3.org/2000/svg">
+          <rect width="280" height="150" fill="#070a0f"/>
+          <rect x="0" y="0" width="280" height="75" fill="#07090d"/>
+          <rect x="0" y="75" width="280" height="75" fill="#0c1018"/>
+          <line x1="0" y1="75" x2="280" y2="75" stroke="#111e2d" stroke-width="1"/>
+          <line x1="45" y1="75" x2="45" y2="150" stroke="#16253a" stroke-width="1" stroke-dasharray="6,4"/>
+          <line x1="100" y1="75" x2="100" y2="150" stroke="#16253a" stroke-width="1" stroke-dasharray="6,4"/>
+          <line x1="155" y1="75" x2="155" y2="150" stroke="#16253a" stroke-width="1" stroke-dasharray="6,4"/>
+          <line x1="210" y1="75" x2="210" y2="150" stroke="#16253a" stroke-width="1" stroke-dasharray="6,4"/>
+          <rect x="48" y="80" width="48" height="25" fill="#141e2c" rx="3"/>
+          <rect x="104" y="82" width="48" height="25" fill="#141e2c" rx="3"/>
+          <rect x="158" y="78" width="48" height="25" fill="#141e2c" rx="3"/>
+          <rect x="10" y="25" width="70" height="45" fill="#0c1520" rx="1"/>
+          <rect x="200" y="30" width="75" height="40" fill="#0c1520" rx="1"/>
+          <text x="4" y="147" fill="#1a3050" font-size="7" font-family="monospace">YOLOv8 · CAM-02 · PARKING-LOT</text>
+        </svg>
+        <div class="det-box" id="det-2"><div class="det-lbl" id="dlbl-2"></div></div>
+        <div class="cam-badge" id="bdg-2"></div>
+        <div class="cam-conf" id="conf-2"></div>
+        <div class="flash-overlay" id="fl-2"></div>
+        <div class="scanline"></div>
+        <div class="scan-beam" style="animation-delay:1.25s"></div>
+        <div class="cam-foot"><span>YOLOv8 · 24FPS</span><span id="ts-2"></span></div>
+        <button class="clear-btn" id="clr-2" onclick="clearAlert(2)">✕ Clear</button>
+      </div>
+    </div>
+
+    <!-- CAM-03 -->
+    <div class="cam" id="cam-3">
+      <div class="cam-head">
+        <span class="cam-id">CAM-03 · Corridor B</span>
+        <div class="cam-controls">
+          <span class="cam-st" id="st-3"><span class="st-dot"></span><span style="color:var(--green)">Normal</span></span>
+          <button class="trig-btn" onclick="manualTrigger(3)">⚡ Trigger</button>
+        </div>
+      </div>
+      <div class="cam-screen">
+        <svg class="cam-svg" viewBox="0 0 280 150" xmlns="http://www.w3.org/2000/svg">
+          <rect width="280" height="150" fill="#070a0f"/>
+          <rect x="0" y="0" width="55" height="150" fill="#060809"/>
+          <rect x="225" y="0" width="55" height="150" fill="#060809"/>
+          <rect x="0" y="0" width="280" height="22" fill="#060a0f"/>
+          <rect x="0" y="118" width="280" height="32" fill="#0a0e14"/>
+          <line x1="55" y1="22" x2="55" y2="118" stroke="#111820" stroke-width="1"/>
+          <line x1="225" y1="22" x2="225" y2="118" stroke="#111820" stroke-width="1"/>
+          <line x1="0" y1="118" x2="280" y2="118" stroke="#111e2d" stroke-width="1"/>
+          <line x1="55" y1="22" x2="140" y2="12" stroke="#0c1420" stroke-width="0.5"/>
+          <line x1="225" y1="22" x2="140" y2="12" stroke="#0c1420" stroke-width="0.5"/>
+          <rect x="130" y="0" width="20" height="5" fill="#0c1929"/>
+          <circle cx="140" cy="60" r="9" fill="#1a2030"/>
+          <rect x="134" y="69" width="12" height="22" fill="#1a2030" rx="1"/>
+          <line x1="134" y1="76" x2="124" y2="90" stroke="#1a2030" stroke-width="3.5" stroke-linecap="round"/>
+          <line x1="146" y1="76" x2="156" y2="90" stroke="#1a2030" stroke-width="3.5" stroke-linecap="round"/>
+          <text x="4" y="147" fill="#1a3050" font-size="7" font-family="monospace">OptFlow · CAM-03 · CORRIDOR-B</text>
+        </svg>
+        <div class="det-box" id="det-3"><div class="det-lbl" id="dlbl-3"></div></div>
+        <div class="cam-badge" id="bdg-3"></div>
+        <div class="cam-conf" id="conf-3"></div>
+        <div class="flash-overlay" id="fl-3"></div>
+        <div class="scanline"></div>
+        <div class="scan-beam" style="animation-delay:2.5s"></div>
+        <div class="cam-foot"><span>OpticalFlow · 24FPS</span><span id="ts-3"></span></div>
+        <button class="clear-btn" id="clr-3" onclick="clearAlert(3)">✕ Clear</button>
+      </div>
+    </div>
+
+    <!-- CAM-04 -->
+    <div class="cam" id="cam-4">
+      <div class="cam-head">
+        <span class="cam-id">CAM-04 · Main Office</span>
+        <div class="cam-controls">
+          <span class="cam-st" id="st-4"><span class="st-dot"></span><span style="color:var(--green)">Normal</span></span>
+          <button class="trig-btn" onclick="manualTrigger(4)">⚡ Trigger</button>
+        </div>
+      </div>
+      <div class="cam-screen">
+        <svg class="cam-svg" viewBox="0 0 280 150" xmlns="http://www.w3.org/2000/svg">
+          <rect width="280" height="150" fill="#070a0f"/>
+          <rect x="0" y="88" width="280" height="62" fill="#0a0f14"/>
+          <rect x="18" y="52" width="65" height="36" fill="#111820" rx="2"/>
+          <rect x="108" y="55" width="65" height="36" fill="#111820" rx="2"/>
+          <rect x="198" y="52" width="65" height="36" fill="#111820" rx="2"/>
+          <rect x="28" y="38" width="40" height="18" fill="#0d1928" rx="1"/>
+          <rect x="118" y="40" width="40" height="18" fill="#0d1928" rx="1"/>
+          <rect x="208" y="38" width="40" height="18" fill="#0d1928" rx="1"/>
+          <circle cx="50" cy="68" r="6" fill="#1e2a3a"/>
+          <circle cx="140" cy="70" r="6" fill="#1e2a3a"/>
+          <circle cx="230" cy="68" r="6" fill="#1e2a3a"/>
+          <line x1="0" y1="88" x2="280" y2="88" stroke="#111e2d" stroke-width="1"/>
+          <text x="4" y="147" fill="#1a3050" font-size="7" font-family="monospace">YOLOv8 · CAM-04 · MAIN-OFFICE</text>
+        </svg>
+        <div class="det-box" id="det-4"><div class="det-lbl" id="dlbl-4"></div></div>
+        <div class="cam-badge" id="bdg-4"></div>
+        <div class="cam-conf" id="conf-4"></div>
+        <div class="flash-overlay" id="fl-4"></div>
+        <div class="scanline"></div>
+        <div class="scan-beam" style="animation-delay:3.75s"></div>
+        <div class="cam-foot"><span>YOLOv8 · 24FPS</span><span id="ts-4"></span></div>
+        <button class="clear-btn" id="clr-4" onclick="clearAlert(4)">✕ Clear</button>
+      </div>
+    </div>
+
+  </div><!-- /cam-grid -->
+
+  <!-- SIDEBAR -->
+  <div class="sidebar">
+
+    <!-- Event Log -->
+    <div class="panel">
+      <div class="tabs">
+        <div class="tab active" id="tab-r" onclick="switchTab('r')">Recent Alerts</div>
+        <div class="tab" id="tab-a" onclick="switchTab('a')">All Events</div>
+      </div>
+      <div class="evt-list" id="evt-list">
+        <div class="evt">
+          <div class="evt-ic ok">✓</div>
+          <div class="evt-body">
+            <div class="evt-title">System Initialized</div>
+            <div class="evt-sub">All 4 cameras online · Models loaded</div>
+            <div class="evt-time" id="init-time"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Model Performance -->
+    <div class="panel">
+      <div class="panel-title">Model Performance</div>
+      <div class="mrow"><span class="mlabel">Gathering Detection (AUC)</span><span class="mval" style="color:var(--amber)">94.7%</span></div>
+      <div class="mbar"><div class="mfill" style="width:94.7%;background:#e3b341"></div></div>
+      <div class="mrow"><span class="mlabel">Processing Speed</span><span class="mval" style="color:var(--blue)">24 FPS</span></div>
+      <div class="mbar"><div class="mfill" style="width:80%;background:#58a6ff"></div></div>
+    </div>
+
+    <!-- Alert Timeline -->
+    <div class="panel">
+      <div class="panel-title">Alert Timeline (24h)</div>
+      <div class="graph">
+        <svg viewBox="0 0 270 54" xmlns="http://www.w3.org/2000/svg">
+          <defs>
+            <linearGradient id="tlg" x1="0" x2="0" y1="0" y2="1">
+              <stop offset="0%" stop-color="#f85149" stop-opacity=".35"/>
+              <stop offset="100%" stop-color="#f85149" stop-opacity="0"/>
+            </linearGradient>
+          </defs>
+          <polyline id="tl-line" points="0,50 25,48 50,45 75,44 95,40 110,38 125,20 140,36 155,38 170,42 190,28 205,34 220,43 240,41 260,43 270,42" fill="none" stroke="#f85149" stroke-width="1.5"/>
+          <polygon id="tl-fill" points="0,50 25,48 50,45 75,44 95,40 110,38 125,20 140,36 155,38 170,42 190,28 205,34 220,43 240,41 260,43 270,42 270,54 0,54" fill="url(#tlg)"/>
+          <circle cx="125" cy="20" r="3" fill="#f85149"/>
+          <text x="109" y="14" fill="#f85149" font-size="7" font-family="monospace">Fight</text>
+          <circle cx="190" cy="28" r="3" fill="#e3b341"/>
+          <text x="178" y="24" fill="#e3b341" font-size="7" font-family="monospace">Group</text>
+          <text x="0" y="54" fill="#2a4060" font-size="7" font-family="monospace">00:00</text>
+          <text x="115" y="54" fill="#2a4060" font-size="7" font-family="monospace">12:00</text>
+          <text x="243" y="54" fill="#2a4060" font-size="7" font-family="monospace">23:59</text>
+        </svg>
+      </div>
+    </div>
+
+  </div><!-- /sidebar -->
+</div><!-- /main -->
+
+<!-- MODAL -->
+<div class="backdrop" id="backdrop" onclick="backdropClick(event)">
+  <div class="modal">
+    <div class="modal-hdr">
+      <div class="modal-title">
+        <span id="m-icon">⚠</span>
+        <span id="m-title">Alert</span>
+        <span class="modal-sev" id="m-sev"></span>
+      </div>
+      <button class="mcl" onclick="closeModal()">✕</button>
+    </div>
+    <div class="modal-prev" id="m-prev">
+      <svg id="m-svg" viewBox="0 0 390 130" xmlns="http://www.w3.org/2000/svg"></svg>
+    </div>
+    <div class="modal-body" id="m-body"></div>
+    <div class="modal-foot">
+      <button class="mbtn mbtn-danger" onclick="acknowledgeAlert()">Acknowledge &amp; Dispatch</button>
+      <button class="mbtn mbtn-sec" onclick="closeModal()">Dismiss</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── CONFIG ──────────────────────────────────────────────────────
+const TYPES = {
+  gathering: {
+    label:'SUDDEN GATHERING', short:'Gathering', icon:'👥',
+    color:'#e3b341', textColor:'#1a0f00', sev:'Medium',
+    desc:'Sudden crowd formation detected',
+    action:'Deploy security patrol to area'
+  },
+  fight: {
+    label:'FIGHT / ALTERCATION', short:'Fight', icon:'⚡',
+    color:'#f85149', textColor:'#fff', sev:'Critical',
+    desc:'Physical altercation detected between individuals',
+    action:'Immediate response — contact security & local authorities'
+  },
+  crash: {
+    label:'CRASH / COLLISION', short:'Collision', icon:'💥',
+    color:'#ff7b54', textColor:'#fff', sev:'High',
+    desc:'Vehicle or object collision detected',
+    action:'Emergency services may be required'
+  }
+};
+
+const CAMS = {
+  1:{ name:'CAM-01', loc:'Main Entrance', model:'YOLOv8' },
+  2:{ name:'CAM-02', loc:'Parking Lot', model:'YOLOv8' },
+  3:{ name:'CAM-03', loc:'Corridor B', model:'OpticalFlow' },
+  4:{ name:'CAM-04', loc:'Main Office', model:'YOLOv8' }
+};
+
+// Detection box positions per cam [left%, top%, width%, height%]
+const DET_POS = {
+  1:[12,22,38,58], 2:[28,44,44,42], 3:[26,18,44,62], 4:[14,18,62,60]
+};
+
+// Modal preview SVG scenes
+const MPREV = {
+  1:`<rect width="390" height="130" fill="#070a0f"/>
+     <rect x="0" y="85" width="390" height="45" fill="#0c1018"/>
+     <rect x="105" y="8" width="180" height="77" fill="#0f1820" rx="2"/>
+     <rect x="165" y="44" width="60" height="41" fill="#09111d" rx="1"/>
+     <circle cx="60" cy="70" r="9" fill="#182030"/><rect x="54" y="79" width="12" height="20" fill="#182030" rx="1"/>
+     <circle cx="305" cy="72" r="9" fill="#182030"/><rect x="299" y="81" width="12" height="20" fill="#182030" rx="1"/>
+     <circle cx="85" cy="68" r="7" fill="#182030"/><rect x="80" y="75" width="10" height="18" fill="#182030" rx="1"/>
+     <circle cx="280" cy="70" r="7" fill="#182030"/><rect x="275" y="77" width="10" height="18" fill="#182030" rx="1"/>`,
+  2:`<rect width="390" height="130" fill="#070a0f"/>
+     <rect x="0" y="70" width="390" height="60" fill="#0c1018"/>
+     <line x1="60" y1="70" x2="60" y2="130" stroke="#16253a" stroke-width="1" stroke-dasharray="5,3"/>
+     <line x1="130" y1="70" x2="130" y2="130" stroke="#16253a" stroke-width="1" stroke-dasharray="5,3"/>
+     <line x1="200" y1="70" x2="200" y2="130" stroke="#16253a" stroke-width="1" stroke-dasharray="5,3"/>
+     <line x1="270" y1="70" x2="270" y2="130" stroke="#16253a" stroke-width="1" stroke-dasharray="5,3"/>
+     <line x1="340" y1="70" x2="340" y2="130" stroke="#16253a" stroke-width="1" stroke-dasharray="5,3"/>
+     <rect x="63" y="75" width="62" height="28" fill="#141e2c" rx="3"/>
+     <rect x="133" y="77" width="62" height="28" fill="#141e2c" rx="3"/>
+     <rect x="203" y="73" width="62" height="28" fill="#141e2c" rx="3"/>
+     <rect x="273" y="76" width="62" height="28" fill="#141e2c" rx="3"/>`,
+  3:`<rect width="390" height="130" fill="#070a0f"/>
+     <rect x="0" y="0" width="75" height="130" fill="#060809"/>
+     <rect x="315" y="0" width="75" height="130" fill="#060809"/>
+     <line x1="75" y1="20" x2="75" y2="110" stroke="#111820" stroke-width="1"/>
+     <line x1="315" y1="20" x2="315" y2="110" stroke="#111820" stroke-width="1"/>
+     <circle cx="165" cy="56" r="9" fill="#1a2030"/><rect x="159" y="65" width="12" height="22" fill="#1a2030" rx="1"/>
+     <circle cx="200" cy="60" r="9" fill="#1a2030"/><rect x="194" y="69" width="12" height="22" fill="#1a2030" rx="1"/>`,
+  4:`<rect width="390" height="130" fill="#070a0f"/>
+     <rect x="0" y="86" width="390" height="44" fill="#0a0f14"/>
+     <rect x="18" y="50" width="95" height="38" fill="#111820" rx="2"/>
+     <rect x="148" y="53" width="95" height="38" fill="#111820" rx="2"/>
+     <rect x="278" y="50" width="95" height="38" fill="#111820" rx="2"/>
+     <rect x="30" y="36" width="65" height="18" fill="#0d1928" rx="1"/>
+     <rect x="160" y="38" width="65" height="18" fill="#0d1928" rx="1"/>
+     <rect x="290" y="36" width="65" height="18" fill="#0d1928" rx="1"/>
+     <circle cx="65" cy="67" r="7" fill="#1e2a3a"/>
+     <circle cx="195" cy="70" r="7" fill="#1e2a3a"/>
+     <circle cx="325" cy="67" r="7" fill="#1e2a3a"/>`
+};
+
+// Modal bounding boxes [x,y,w,h in SVG coords]
+const MBOX = {
+  1:[55,22,145,90], 2:[125,66,190,50], 3:[88,18,195,100], 4:[55,24,265,76]
+};
+
+// ── STATE ────────────────────────────────────────────────────────
+let alertCount = 0;
+let frameCount = 14820;
+let isDark = true;
+let simRunning = true;
+let simDelay = 15000;
+let activeAlerts = {}; // camId -> type
+let currentModal = null;
+let simTimer = null;
+let typeQueue = ['gathering','fight','crash','fight','gathering','crash'];
+let queueIdx = 0;
+let tabAll = false;
+
+// ── INIT ─────────────────────────────────────────────────────────
+window.addEventListener('DOMContentLoaded', () => {
+  const now = new Date();
+  const el = document.getElementById('init-time');
+  if (el) el.textContent = p(now.getHours())+':'+p(now.getMinutes())+' · System boot';
+  setInterval(updateClock, 1000); updateClock();
+  setInterval(updateFrames, 1000);
+  setInterval(updateTimestamps, 1000); updateTimestamps();
+  scheduleAuto();
+});
+
+function p(n){ return n<10?'0'+n:''+n; }
+function ts(){ const n=new Date(); return p(n.getHours())+':'+p(n.getMinutes())+':'+p(n.getSeconds()); }
+function tsShort(){ const n=new Date(); return p(n.getHours())+':'+p(n.getMinutes()); }
+function updateClock(){ const el=document.getElementById('clock'); if(el) el.textContent=ts(); }
+function updateFrames(){ frameCount+=Math.floor(Math.random()*2)+22; const el=document.getElementById('frame-count'); if(el) el.textContent=frameCount.toLocaleString(); }
+function updateTimestamps(){ for(let i=1;i<=4;i++){ const el=document.getElementById('ts-'+i); if(el) el.textContent=ts(); } }
+
+// ── AUTO SIMULATION ──────────────────────────────────────────────
+function scheduleAuto(){
+  clearTimeout(simTimer);
+  if(!simRunning) return;
+  const jitter = (Math.random()*0.4 - 0.2) * simDelay; // ±20% jitter
+  simTimer = setTimeout(()=>{
+    const cam = Math.ceil(Math.random()*4);
+    const type = typeQueue[queueIdx % typeQueue.length];
+    queueIdx++;
+    if(!activeAlerts[cam]) triggerAlert(cam, type);
+    scheduleAuto();
+  }, simDelay + jitter);
+}
+
+function toggleSim(){
+  simRunning = !simRunning;
+  const btn = document.getElementById('simToggle');
+  if(simRunning){
+    btn.textContent='● Running'; btn.classList.add('active');
+    scheduleAuto();
+  } else {
+    btn.textContent='○ Paused'; btn.classList.remove('active');
+    clearTimeout(simTimer);
+  }
+}
+
+function updateSimSpeed(){
+  simDelay = parseInt(document.getElementById('simSpeed').value);
+  if(simRunning){ scheduleAuto(); }
+}
+
+function triggerAllCams(){
+  const types = Object.keys(TYPES);
+  [1,2,3,4].forEach((cam,i)=>{
+    setTimeout(()=>{
+      if(!activeAlerts[cam]) triggerAlert(cam, types[i % types.length]);
+    }, i * 600);
+  });
+}
+
+function clearAllAlerts(){
+  [1,2,3,4].forEach(i => clearAlert(i));
+}
+
+// ── MANUAL TRIGGER ───────────────────────────────────────────────
+function manualTrigger(cam){
+  if(activeAlerts[cam]){
+    const types = Object.keys(TYPES);
+    const next = types[(types.indexOf(activeAlerts[cam])+1) % types.length];
+    clearAlert(cam);
+    setTimeout(()=>triggerAlert(cam, next), 150);
+  } else {
+    const types = Object.keys(TYPES);
+    triggerAlert(cam, types[Math.floor(Math.random()*types.length)]);
+  }
+}
+
+// ── TRIGGER ALERT ────────────────────────────────────────────────
+function triggerAlert(cam, type){
+  if(activeAlerts[cam]) return;
+  activeAlerts[cam] = type;
+  const T = TYPES[type], C = CAMS[cam];
+  const conf = (84 + Math.floor(Math.random()*13)) + '%';
+
+  // 1 · Flash camera border
+  flashCam(cam, T.color);
+
+  // 2 · Show detection box
+  const pos = DET_POS[cam];
+  const box = document.getElementById('det-'+cam);
+  const lbl = document.getElementById('dlbl-'+cam);
+  if(box){
+    box.style.left=pos[0]+'%'; box.style.top=pos[1]+'%';
+    box.style.width=pos[2]+'%'; box.style.height=pos[3]+'%';
+    box.className='det-box '+type; box.style.display='block';
+    if(lbl) lbl.textContent=T.label+' '+conf;
+  }
+
+  // 3 · Camera badge
+  const bdg = document.getElementById('bdg-'+cam);
+  if(bdg){ bdg.className='cam-badge '+type; bdg.textContent=T.short.toUpperCase(); bdg.style.display='block'; }
+
+  // 4 · Confidence
+  const cfEl = document.getElementById('conf-'+cam);
+  if(cfEl){ cfEl.textContent='CONF:'+conf+' FRAME:'+frameCount.toLocaleString(); cfEl.style.display='block'; }
+
+  // 5 · Camera border
+  const camEl = document.getElementById('cam-'+cam);
+  if(camEl){ camEl.className='cam a-'+type; }
+
+  // 6 · Status text
+  const stEl = document.getElementById('st-'+cam);
+  const stColors={gathering:'var(--amber)',fight:'var(--red)',crash:'var(--orange)'};
+  const stLabels={gathering:'⚠ Gathering',fight:'! Fight',crash:'! Collision'};
+  if(stEl) stEl.innerHTML=`<span class="st-dot" style="background:${stColors[type]}"></span><span style="color:${stColors[type]}">${stLabels[type]}</span>`;
+
+  // 7 · Show clear btn
+  const clrBtn = document.getElementById('clr-'+cam);
+  if(clrBtn) clrBtn.style.display='block';
+
+  // 8 · Sound
+  playBeep(type);
+
+  // 9 · Alert count
+  alertCount++;
+  const cntEl = document.getElementById('alert-count');
+  if(cntEl){ cntEl.textContent=alertCount; cntEl.style.transform='scale(1.35)'; setTimeout(()=>cntEl.style.transform='',300); }
+
+  // 10 · Event log
+  addToLog(cam, type, T, C, conf);
+
+  // 11 · Modal (slight delay for drama)
+  setTimeout(()=>showModal(cam, type, T, C, conf), 700);
+
+  // 12 · Auto clear after 28s
+  setTimeout(()=>clearAlert(cam), 28000);
+}
+
+// ── FLASH ────────────────────────────────────────────────────────
+function flashCam(cam, color){
+  const c = document.getElementById('cam-'+cam);
+  const f = document.getElementById('fl-'+cam);
+  if(!c||!f) return;
+  c.style.setProperty('--fc', color);
+  c.classList.add('flashing'); f.style.display='block';
+  setTimeout(()=>{ c.classList.remove('flashing'); f.style.display='none'; }, 750);
+  setTimeout(()=>{
+    c.classList.add('flashing'); f.style.display='block';
+    setTimeout(()=>{ c.classList.remove('flashing'); f.style.display='none'; }, 750);
+  }, 1100);
+}
+
+// ── CLEAR ALERT ──────────────────────────────────────────────────
+function clearAlert(cam){
+  delete activeAlerts[cam];
+  ['det-','bdg-','conf-'].forEach(p=>{ const el=document.getElementById(p+cam); if(el) el.style.display='none'; });
+  const clr=document.getElementById('clr-'+cam); if(clr) clr.style.display='none';
+  const c=document.getElementById('cam-'+cam); if(c) c.className='cam';
+  const st=document.getElementById('st-'+cam);
+  if(st) st.innerHTML=`<span class="st-dot"></span><span style="color:var(--green)">Normal</span>`;
+}
+
+// ── SOUND ────────────────────────────────────────────────────────
+function playBeep(type){
+  try{
+    const ctx=new(window.AudioContext||window.webkitAudioContext)();
+    const osc=ctx.createOscillator(); const g=ctx.createGain();
+    osc.connect(g); g.connect(ctx.destination);
+    if(type==='fight'){
+      osc.type='square';
+      osc.frequency.setValueAtTime(1100,ctx.currentTime);
+      osc.frequency.setValueAtTime(800,ctx.currentTime+.12);
+      osc.frequency.setValueAtTime(1100,ctx.currentTime+.25);
+    } else if(type==='gathering'){
+      osc.type='sine';
+      osc.frequency.setValueAtTime(620,ctx.currentTime);
+      osc.frequency.linearRampToValueAtTime(820,ctx.currentTime+.25);
+    } else {
+      osc.type='sawtooth';
+      osc.frequency.setValueAtTime(350,ctx.currentTime);
+      osc.frequency.exponentialRampToValueAtTime(80,ctx.currentTime+.45);
+    }
+    g.gain.setValueAtTime(.15,ctx.currentTime);
+    g.gain.exponentialRampToValueAtTime(.001,ctx.currentTime+.55);
+    osc.start(ctx.currentTime); osc.stop(ctx.currentTime+.6);
+  }catch(e){}
+}
+
+// ── EVENT LOG ────────────────────────────────────────────────────
+const ICONS={gathering:'👥',fight:'⚡',crash:'💥',ok:'✓'};
+
+function addToLog(cam, type, T, C, conf){
+  const list=document.getElementById('evt-list'); if(!list) return;
+  const evt=document.createElement('div');
+  evt.className='evt new';
+  evt.innerHTML=`
+    <div class="evt-ic ${type}">${ICONS[type]}</div>
+    <div class="evt-body">
+      <div class="evt-title">${T.desc}</div>
+      <div class="evt-sub">${C.name} · ${C.loc} · conf ${conf}</div>
+      <div class="evt-time">${tsShort()} · Just now</div>
+    </div>`;
+  list.insertBefore(evt, list.firstChild);
+  while(list.children.length>12) list.removeChild(list.lastChild);
+}
+
+// ── MODAL ────────────────────────────────────────────────────────
+function showModal(cam, type, T, C, conf){
+  currentModal={cam,type};
+  const svg=document.getElementById('m-svg');
+  svg.innerHTML=MPREV[cam]||MPREV[1];
+  const b=MBOX[cam];
+  const ns='http://www.w3.org/2000/svg';
+  const rect=document.createElementNS(ns,'rect');
+  rect.setAttribute('x',b[0]); rect.setAttribute('y',b[1]);
+  rect.setAttribute('width',b[2]); rect.setAttribute('height',b[3]);
+  rect.setAttribute('fill','none'); rect.setAttribute('stroke',T.color);
+  rect.setAttribute('stroke-width','2.5'); rect.setAttribute('rx','3');
+  svg.appendChild(rect);
+  const txt=document.createElementNS(ns,'text');
+  txt.setAttribute('x',b[0]); txt.setAttribute('y',b[1]-5);
+  txt.setAttribute('fill',T.color); txt.setAttribute('font-size','9');
+  txt.setAttribute('font-family','monospace');
+  txt.textContent=T.label+' '+conf;
+  svg.appendChild(txt);
+
+  document.getElementById('m-icon').textContent=T.icon;
+  document.getElementById('m-title').textContent=T.label;
+  const sev=document.getElementById('m-sev');
+  sev.textContent=T.sev; sev.style.background=T.color; sev.style.color=T.textColor;
+
+  document.getElementById('m-body').innerHTML=`
+    <div class="modal-row"><span class="mkey">Camera</span><span class="mval2">${C.name} · ${C.loc}</span></div>
+    <div class="modal-row"><span class="mkey">Detection</span><span class="mval2" style="color:${T.color}">${T.label}</span></div>
+    <div class="modal-row"><span class="mkey">Confidence</span><span class="mval2">${conf}</span></div>
+    <div class="modal-row"><span class="mkey">Timestamp</span><span class="mval2">${ts()}</span></div>
+    <div class="modal-row"><span class="mkey">Severity</span><span class="mval2" style="color:${T.color}">${T.sev}</span></div>
+    <div class="modal-row"><span class="mkey">Recommended Action</span><span class="mval2">${T.action}</span></div>`;
+
+  document.getElementById('backdrop').classList.add('open');
+}
+
+function closeModal(){ document.getElementById('backdrop').classList.remove('open'); currentModal=null; }
+
+function backdropClick(e){ if(e.target.id==='backdrop') closeModal(); }
+
+function acknowledgeAlert(){
+  if(currentModal){
+    clearAlert(currentModal.cam);
+    const list=document.getElementById('evt-list');
+    if(list){
+      const evt=document.createElement('div');
+      evt.className='evt new';
+      evt.innerHTML=`
+        <div class="evt-ic ok">✓</div>
+        <div class="evt-body">
+          <div class="evt-title">Alert Acknowledged</div>
+          <div class="evt-sub">Security dispatched · ${CAMS[currentModal.cam].loc}</div>
+          <div class="evt-time">${tsShort()} · Just now</div>
+        </div>`;
+      list.insertBefore(evt, list.firstChild);
+    }
+  }
+  closeModal();
+}
+
+// ── TABS ─────────────────────────────────────────────────────────
+function switchTab(t){
+  tabAll = t==='a';
+  document.getElementById('tab-r').classList.toggle('active', !tabAll);
+  document.getElementById('tab-a').classList.toggle('active', tabAll);
+}
+
+// ── THEME ────────────────────────────────────────────────────────
+function toggleTheme(){
+  isDark=!isDark;
+  document.documentElement.setAttribute('data-theme', isDark?'dark':'light');
+  document.getElementById('themeBtn').textContent=isDark?'☾ Dark':'☀ Light';
+}
+</script>
+</body>
+</html>

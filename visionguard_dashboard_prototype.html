@@ -1,0 +1,257 @@
+
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:var(--font-sans);background:transparent}
+.hdr{background:#0d1117;color:#fff;padding:10px 16px;display:flex;align-items:center;justify-content:space-between;border-radius:var(--border-radius-lg) var(--border-radius-lg) 0 0}
+.hdr-left{display:flex;align-items:center;gap:10px}
+.logo{font-size:15px;font-weight:500;color:#58a6ff}
+.badge{font-size:11px;padding:2px 8px;border-radius:20px;background:#1a2a1a;color:#3fb950;border:0.5px solid #3fb950}
+.live-dot{width:7px;height:7px;border-radius:50%;background:#3fb950;animation:pulse 1.5s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.3}}
+.hdr-right{display:flex;gap:12px;font-size:12px;color:#8b949e}
+.stat-row{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;padding:10px;background:#0d1117}
+.stat{background:#161b22;border:0.5px solid #30363d;border-radius:8px;padding:10px 12px}
+.stat-label{font-size:11px;color:#8b949e;margin-bottom:4px}
+.stat-val{font-size:22px;font-weight:500;color:#e6edf3}
+.stat-val.red{color:#f85149}
+.stat-val.green{color:#3fb950}
+.stat-val.amber{color:#e3b341}
+.main{display:grid;grid-template-columns:1fr 320px;background:#0d1117;gap:8px;padding:0 10px 10px}
+.cam-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.cam{background:#161b22;border:0.5px solid #30363d;border-radius:8px;overflow:hidden;position:relative}
+.cam-top{background:#0d1117;padding:6px 10px;font-size:11px;color:#8b949e;display:flex;justify-content:space-between;align-items:center}
+.cam-screen{height:120px;display:flex;align-items:center;justify-content:center;position:relative;overflow:hidden}
+.cam-screen svg{width:100%;height:100%}
+.alert-badge{position:absolute;top:6px;right:6px;background:#da3633;color:#fff;font-size:10px;padding:2px 6px;border-radius:4px;font-weight:500}
+.normal-badge{position:absolute;top:6px;right:6px;background:#1a2a1a;color:#3fb950;font-size:10px;padding:2px 6px;border-radius:4px}
+.sidebar{display:flex;flex-direction:column;gap:8px}
+.panel{background:#161b22;border:0.5px solid #30363d;border-radius:8px;padding:12px}
+.panel-title{font-size:12px;font-weight:500;color:#8b949e;margin-bottom:10px;text-transform:uppercase;letter-spacing:0.5px}
+.event{display:flex;gap:10px;padding:7px 0;border-bottom:0.5px solid #21262d;align-items:flex-start}
+.event:last-child{border-bottom:none;padding-bottom:0}
+.evt-icon{width:28px;height:28px;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0}
+.evt-icon.crit{background:#2d1117;color:#f85149}
+.evt-icon.warn{background:#2d2205;color:#e3b341}
+.evt-icon.ok{background:#1a2a1a;color:#3fb950}
+.evt-body{flex:1;min-width:0}
+.evt-title{font-size:12px;font-weight:500;color:#e6edf3;margin-bottom:2px}
+.evt-sub{font-size:11px;color:#8b949e}
+.evt-time{font-size:10px;color:#6e7681;margin-top:2px}
+.graph{height:60px;position:relative;margin-top:4px}
+.graph svg{width:100%;height:100%}
+.cam-label{font-size:11px;color:#8b949e}
+.detect-box{position:absolute;border:1.5px solid #f85149;border-radius:3px}
+.detect-lbl{position:absolute;background:#f85149;color:#fff;font-size:9px;padding:1px 4px;top:-14px;left:0;white-space:nowrap;border-radius:2px}
+.tabs{display:flex;gap:0;margin-bottom:10px;border-bottom:0.5px solid #30363d}
+.tab{font-size:11px;padding:6px 12px;cursor:pointer;color:#8b949e;border-bottom:2px solid transparent}
+.tab.active{color:#58a6ff;border-bottom-color:#58a6ff}
+.acc-bar{height:8px;background:#21262d;border-radius:4px;margin-top:4px;overflow:hidden}
+.acc-fill{height:100%;border-radius:4px;background:#3fb950}
+.metric-row{display:flex;justify-content:space-between;align-items:center;padding:4px 0;font-size:12px}
+.metric-label{color:#8b949e}
+.metric-val{color:#e6edf3;font-weight:500}
+</style>
+
+<div style="border-radius:var(--border-radius-lg);overflow:hidden;border:0.5px solid #30363d">
+
+<div class="hdr">
+  <div class="hdr-left">
+    <div class="live-dot"></div>
+    <span class="logo">VisionGuard</span>
+    <span class="badge">LIVE</span>
+  </div>
+  <div class="hdr-right">
+    <span>K.J. Somaiya SOE</span>
+    <span id="clock">--:--:--</span>
+  </div>
+</div>
+
+<div class="stat-row">
+  <div class="stat"><div class="stat-label">Cameras Online</div><div class="stat-val green">4 / 4</div></div>
+  <div class="stat"><div class="stat-label">Alerts Today</div><div class="stat-val red" id="alert-count">3</div></div>
+  <div class="stat"><div class="stat-label">Frames Processed</div><div class="stat-val amber" id="frame-count">14,820</div></div>
+  <div class="stat"><div class="stat-label">Model Accuracy</div><div class="stat-val green">94.7%</div></div>
+</div>
+
+<div class="main">
+  <div class="cam-grid">
+
+    <div class="cam">
+      <div class="cam-top"><span class="cam-label">CAM-01 · Main Entrance</span><span style="color:#3fb950;font-size:10px"> Normal</span></div>
+      <div class="cam-screen" style="background:#0a0e14">
+        <svg viewBox="0 0 200 110" xmlns="http://www.w3.org/2000/svg">
+          <rect width="200" height="110" fill="#0a0e14"/>
+          <rect x="0" y="70" width="200" height="40" fill="#111820"/>
+          <rect x="70" y="20" width="60" height="80" fill="#141c28" rx="2"/>
+          <rect x="85" y="50" width="30" height="50" fill="#0f1520"/>
+          <circle cx="50" cy="55" r="8" fill="#1e2a3a"/>
+          <circle cx="150" cy="55" r="6" fill="#1e2a3a"/>
+          <line x1="0" y1="70" x2="200" y2="70" stroke="#1e2a3a" stroke-width="1"/>
+          <ellipse cx="50" cy="70" rx="10" ry="3" fill="#141c28"/>
+          <ellipse cx="150" cy="70" rx="8" ry="3" fill="#141c28"/>
+          <text x="4" y="106" fill="#2a3a4a" font-size="7" font-family="monospace">YOLOv8 · No anomaly</text>
+        </svg>
+        <div class="normal-badge"> Clear</div>
+      </div>
+    </div>
+
+    <div class="cam" id="cam2">
+      <div class="cam-top"><span class="cam-label">CAM-02 · Server Room</span><span style="color:#f85149;font-size:10px">Alert</span></div>
+      <div class="cam-screen" style="background:#0a0e14;cursor:pointer" onclick="triggerAlert()">
+        <svg viewBox="0 0 200 110" xmlns="http://www.w3.org/2000/svg">
+          <rect width="200" height="110" fill="#0a0e14"/>
+          <rect x="0" y="70" width="200" height="40" fill="#110e0e"/>
+          <rect x="10" y="15" width="30" height="60" fill="#1a1010" rx="1"/>
+          <rect x="50" y="15" width="30" height="60" fill="#1a1010" rx="1"/>
+          <rect x="90" y="15" width="30" height="60" fill="#1a1010" rx="1"/>
+          <rect x="130" y="15" width="30" height="60" fill="#1a1010" rx="1"/>
+          <rect x="163" y="30" width="6" height="40" fill="#261010" rx="1"/>
+          <circle cx="166" cy="52" r="6" fill="#2d1117"/>
+          <text x="4" y="106" fill="#4a2a2a" font-size="7" font-family="monospace">YOLOv8 · INTRUDER DETECTED</text>
+          <rect x="155" y="22" width="22" height="48" fill="none" stroke="#f85149" stroke-width="1.5" rx="2" opacity="0.9"/>
+          <text x="155" y="19" fill="#f85149" font-size="7" font-family="monospace">PERSON</text>
+        </svg>
+        <div class="alert-badge">Intruder</div>
+      </div>
+    </div>
+
+    <div class="cam">
+      <div class="cam-top"><span class="cam-label">CAM-03 · Corridor B</span><span style="color:#e3b341;font-size:10px"> Motion</span></div>
+      <div class="cam-screen" style="background:#0a0e14">
+        <svg viewBox="0 0 200 110" xmlns="http://www.w3.org/2000/svg">
+          <rect width="200" height="110" fill="#0a0e14"/>
+          <rect x="0" y="70" width="200" height="40" fill="#0e0e12"/>
+          <rect x="0" y="0" width="200" height="70" fill="#0c0c14"/>
+          <line x1="0" y1="70" x2="200" y2="70" stroke="#1e1e2a" stroke-width="1"/>
+          <rect x="0" y="0" width="40" height="70" fill="#08080e"/>
+          <rect x="160" y="0" width="40" height="70" fill="#08080e"/>
+          <circle cx="95" cy="42" r="9" fill="#1a1a28"/>
+          <rect x="89" y="51" width="12" height="18" fill="#1a1a28" rx="1"/>
+          <rect x="78" y="38" width="8" height="3" fill="#1a1a28" rx="1" transform="rotate(-20,78,38)"/>
+          <rect x="114" y="38" width="8" height="3" fill="#1a1a28" rx="1" transform="rotate(20,114,38)"/>
+          <rect x="80" y="52" width="5" height="14" fill="#1a1a28" rx="1" transform="rotate(15,80,52)"/>
+          <rect x="108" y="52" width="5" height="14" fill="#1a1a28" rx="1" transform="rotate(-15,108,52)"/>
+          <rect x="75" y="30" width="50" height="45" fill="none" stroke="#e3b341" stroke-width="1" rx="2" stroke-dasharray="3,2"/>
+          <text x="75" y="27" fill="#e3b341" font-size="7" font-family="monospace">MOTION</text>
+          <text x="4" y="106" fill="#3a3a2a" font-size="7" font-family="monospace">Optical flow · Rapid movement</text>
+        </svg>
+      </div>
+    </div>
+
+    <div class="cam">
+      <div class="cam-top"><span class="cam-label">CAM-04 · Main office</span><span style="color:#3fb950;font-size:10px"> Normal</span></div>
+      <div class="cam-screen" style="background:#0a0e14">
+        <svg viewBox="0 0 200 110" xmlns="http://www.w3.org/2000/svg">
+          <rect width="200" height="110" fill="#0a0e14"/>
+          <rect x="0" y="60" width="200" height="50" fill="#111410"/>
+          <rect x="20" y="35" width="50" height="28" fill="#1a1e14" rx="2"/>
+          <rect x="100" y="40" width="45" height="24" fill="#1a1e14" rx="2"/>
+          <rect x="155" y="38" width="38" height="26" fill="#1a1e14" rx="2"/>
+          <circle cx="35" cy="64" r="5" fill="#212a1a"/>
+          <circle cx="60" cy="64" r="5" fill="#212a1a"/>
+          <circle cx="112" cy="65" r="5" fill="#212a1a"/>
+          <circle cx="135" cy="65" r="5" fill="#212a1a"/>
+          <text x="4" y="106" fill="#2a3a2a" font-size="7" font-family="monospace">YOLOv8 · No anomaly</text>
+        </svg>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="sidebar">
+    <div class="panel">
+      <div class="tabs">
+        <div class="tab active">Recent Alerts</div>
+        <div class="tab" style="cursor:pointer">All Events</div>
+      </div>
+      <div class="event">
+        
+        <div class="evt-body">
+          <div class="evt-title">Unauthorized Access Detected</div>
+          <div class="evt-sub">CAM-02 · Server Room · Person in restricted zone after 22:00</div>
+          <div class="evt-time" id="t1"></div>
+        </div>
+      </div>
+      <div class="event">
+    
+        <div class="evt-body">
+          <div class="evt-title">Rapid Motion Detected</div>
+          <div class="evt-sub">CAM-03 · Corridor B · Sudden running pattern</div>
+          <div class="evt-time" id="t2"></div>
+        </div>
+      </div>
+      <div class="event">
+        <div class="evt-body">
+          <div class="evt-title">Camera Tampering Attempt</div>
+          <div class="evt-sub">CAM-01 · Blur spike detected · Auto-recovered</div>
+          <div class="evt-time" id="t3"></div>
+        </div>
+      </div>
+      <div class="event">
+        
+        <div class="evt-body">
+          <div class="evt-title">System Check Passed</div>
+          <div class="evt-sub">All 4 cameras online · Models loaded</div>
+          <div class="evt-time" id="t4"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-title">Model Performance</div>
+      <div class="metric-row"><span class="metric-label">Anomaly Detection (AUC)</span><span class="metric-val">94.7%</span></div>
+      <div class="acc-bar"><div class="acc-fill" style="width:94.7%"></div></div>
+      <div class="metric-row" style="margin-top:8px"><span class="metric-label">Object Detection (mAP)</span><span class="metric-val">91.3%</span></div>
+      <div class="acc-bar"><div class="acc-fill" style="width:91.3%;background:#e3b341"></div></div>
+      <div class="metric-row" style="margin-top:8px"><span class="metric-label">Tampering Detection</span><span class="metric-val">94.0%</span></div>
+      <div class="acc-bar"><div class="acc-fill" style="width:94%;background:#58a6ff"></div></div>
+      <div class="metric-row" style="margin-top:8px"><span class="metric-label">Processing Speed</span><span class="metric-val">24 FPS</span></div>
+      <div class="acc-bar"><div class="acc-fill" style="width:80%;background:#9e6cfa"></div></div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-title">Alert Timeline (24h)</div>
+      <div class="graph">
+        <svg viewBox="0 0 280 55" xmlns="http://www.w3.org/2000/svg">
+          <defs><linearGradient id="gr" x1="0" x2="0" y1="0" y2="1"><stop offset="0%" stop-color="#f85149" stop-opacity="0.3"/><stop offset="100%" stop-color="#f85149" stop-opacity="0"/></linearGradient></defs>
+          <polyline points="0,50 20,48 40,45 60,44 80,40 100,38 110,20 120,36 140,38 160,42 180,30 200,35 220,44 240,42 260,44 280,43" fill="none" stroke="#f85149" stroke-width="1.5"/>
+          <polygon points="0,50 20,48 40,45 60,44 80,40 100,38 110,20 120,36 140,38 160,42 180,30 200,35 220,44 240,42 260,44 280,43 280,55 0,55" fill="url(#gr)"/>
+          <circle cx="110" cy="20" r="3" fill="#f85149"/>
+          <circle cx="180" cy="30" r="3" fill="#e3b341"/>
+          <text x="106" y="14" fill="#f85149" font-size="7">Intruder</text>
+          <text x="162" y="26" fill="#e3b341" font-size="7">Motion</text>
+          <text x="0" y="54" fill="#6e7681" font-size="7">00:00</text>
+          <text x="120" y="54" fill="#6e7681" font-size="7">12:00</text>
+          <text x="250" y="54" fill="#6e7681" font-size="7">23:59</text>
+        </svg>
+      </div>
+    </div>
+  </div>
+</div>
+
+</div>
+
+<script>
+function pad(n){return n<10?'0'+n:n}
+function tick(){
+  const now=new Date();
+  document.getElementById('clock').textContent=pad(now.getHours())+':'+pad(now.getMinutes())+':'+pad(now.getSeconds());
+  const fc=document.getElementById('frame-count');
+  const cur=parseInt(fc.textContent.replace(/,/g,''));
+  fc.textContent=(cur+1).toLocaleString();
+}
+setInterval(tick,1000);tick();
+
+const now=new Date();
+function fmt(minsAgo){const d=new Date(now-minsAgo*60000);return pad(d.getHours())+':'+pad(d.getMinutes())+' · '+minsAgo+'m ago'}
+document.getElementById('t1').textContent=fmt(4);
+document.getElementById('t2').textContent=fmt(18);
+document.getElementById('t3').textContent=fmt(47);
+document.getElementById('t4').textContent=fmt(120);
+
+let alertCount=3;
+function triggerAlert(){
+  alertCount++;
+  document.getElementById('alert-count').textContent=alertCount;
+}
+</script>

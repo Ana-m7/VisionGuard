@@ -6,8 +6,8 @@ from ultralytics import YOLO
 from collections import defaultdict
 
 # --- CONFIG ---
-VIDEO_PATH = "../videos/crowd.mp4"   # change to your video filename
-CROWD_THRESHOLD = 7                # people per zone to trigger alert
+VIDEO_PATH = "../videos/crowd2.mp4"   # change to your video filename
+CROWD_THRESHOLD = 2                # people per zone to trigger alert
 GRID_ROWS = 3
 GRID_COLS = 3
 EVIDENCE_DIR = "evidence_frames"

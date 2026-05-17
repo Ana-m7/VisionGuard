@@ -2,16 +2,9 @@
 evidence_frames/
 crowd_events.db
 
-# model weights
-# *.pt
-
-# videos
-# videos/
-
-# python cache
 __pycache__/
 *.pyc
-
-# env
 .env
 venv/
+.venv/
+.claude/

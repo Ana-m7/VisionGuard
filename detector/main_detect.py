@@ -8,20 +8,23 @@ from datetime import datetime
 from ultralytics import YOLO
 from collections import defaultdict
 
+_HERE = os.path.dirname(os.path.abspath(__file__))
+_ROOT = os.path.dirname(_HERE)
+
 # ================================================================
 # VIDEO SOURCES
 # ================================================================
 VIDEO_SOURCES = {
-    1: "../videos/video1.mp4",   # CAM-01 → crowd detection
-    3: "../videos/video2.mp4",     # CAM-03 → fall detection
+    1: os.path.join(_ROOT, "videos", "video1.mp4"),
+    2: os.path.join(_ROOT, "videos", "video2.mp4"),
 }
 
 # ================================================================
 # CONFIG
 # ================================================================
-CROWD_THRESHOLD   = 4
+CROWD_THRESHOLD   = 3
 GRID_ROWS         = 3
-GRID_COLS         = 3
+GRID_COLS         = 4
 
 ASPECT_RATIO_FALL = 1.3
 
@@ -30,24 +33,9 @@ PUSH_INTERVAL     = 0.05  # seconds (~20 FPS) for MJPEG smoothness
 
 FRAME_SIZE        = (480, 270)
 
-EVIDENCE_DIR      = "../evidence_frames"
-
-DB_PATH           = "../crowd_events.db"
-
+EVIDENCE_DIR      = os.path.join(_ROOT, "evidence_frames")
+DB_PATH           = os.path.join(_ROOT, "crowd_events.db")
 API_BASE          = "http://127.0.0.1:8000"
-
-CAM_CROWD = 1
-CAM_FALL  = 3
-
-# ================================================================
-# COOLDOWN CONFIG
-# How many seconds must pass before the same detector can insert
-# a new DB row (and therefore trigger a new frontend alert) again.
-# This stops "same ongoing event → hundreds of rows → popup spam".
-# ================================================================
-CROWD_ALERT_COOLDOWN   = 30   # seconds
-FALL_ALERT_COOLDOWN    = 20   # seconds
-FALL_EVIDENCE_COOLDOWN = 15   # seconds between saving evidence frames
 
 # ================================================================
 # DB SETUP
@@ -61,6 +49,7 @@ cur     = conn.cursor()
 cur.execute("""
     CREATE TABLE IF NOT EXISTS crowd_events (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
+        cam_id INTEGER,
         timestamp TEXT,
         person_count INTEGER,
         max_zone_density INTEGER,
@@ -72,6 +61,7 @@ cur.execute("""
 cur.execute("""
     CREATE TABLE IF NOT EXISTS fall_events (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
+        cam_id INTEGER,
         timestamp TEXT,
         is_fall INTEGER
     )
@@ -131,8 +121,8 @@ def push_frame(cam_id, frame):
 # LOAD MODELS
 # ================================================================
 print("Loading models...")
-crowd_model = YOLO("../yolov8n.pt")
-fall_model  = YOLO("../yolov8n-pose.pt")
+crowd_model = YOLO(os.path.join(_ROOT, "models", "yolov8n.pt"))
+fall_model  = YOLO(os.path.join(_ROOT, "models", "yolov8n-pose.pt"))
 print("Models loaded.")
 
 
@@ -185,10 +175,11 @@ def draw_grid(frame, zone_counts):
 
 # ================================================================
 # CROWD DETECTOR
+# Returns (is_alert, annotated_frame) at original resolution — no push.
+# The caller passes the returned frame to run_fall_detection so both
+# overlays are composited before the single push_frame call.
 # ================================================================
-def run_crowd_detection(
-    frame, cam_id, last_state, frame_num, timestamp, last_alert_time
-):
+def run_crowd_detection(frame, cam_id, last_state, frame_num, timestamp):
     results      = crowd_model(frame, classes=[0], verbose=False)[0]
     person_count = len(results.boxes)
 
@@ -199,34 +190,28 @@ def run_crowd_detection(
     annotated = draw_grid(frame.copy(), zone_counts)
     annotated = results.plot(img=annotated)
 
-    now = time.time()
-
     if is_alert and not last_state:
-        # Log once per new crowd event (transition to alert)
-        if now - last_alert_time >= CROWD_ALERT_COOLDOWN:
-            last_alert_time = now
-            frame_path = f"{EVIDENCE_DIR}/crowd_cam{cam_id}_{frame_num}.jpg"
-            cv2.imwrite(frame_path, annotated)
-            print(f"[{timestamp}] CAM-{cam_id:02d} CROWD ALERT — {person_count} persons")
-            db_insert(
-                """
-                INSERT INTO crowd_events
-                (timestamp, person_count, max_zone_density, is_alert, frame_path)
-                VALUES (?, ?, ?, ?, ?)
-                """,
-                (timestamp, person_count, max_density, 1, frame_path)
-            )
+        frame_path = f"{EVIDENCE_DIR}/crowd_cam{cam_id}_{frame_num}.jpg"
+        cv2.imwrite(frame_path, annotated)
+        print(f"[{timestamp}] CAM-{cam_id:02d} CROWD ALERT — {person_count} persons")
+        db_insert(
+            """
+            INSERT INTO crowd_events
+            (cam_id, timestamp, person_count, max_zone_density, is_alert, frame_path)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (cam_id, timestamp, person_count, max_density, 1, frame_path)
+        )
 
     elif (not is_alert) and last_state:
-        # Alert just cleared — log once
         print(f"[{timestamp}] CAM-{cam_id:02d} Crowd cleared")
         db_insert(
             """
             INSERT INTO crowd_events
-            (timestamp, person_count, max_zone_density, is_alert, frame_path)
-            VALUES (?, ?, ?, ?, ?)
+            (cam_id, timestamp, person_count, max_zone_density, is_alert, frame_path)
+            VALUES (?, ?, ?, ?, ?, ?)
             """,
-            (timestamp, person_count, max_density, 0, "")
+            (cam_id, timestamp, person_count, max_density, 0, "")
         )
 
     color = (0, 0, 255) if is_alert else (0, 255, 0)
@@ -236,22 +221,20 @@ def run_crowd_detection(
         (20, 40), cv2.FONT_HERSHEY_SIMPLEX, 0.8, color, 2
     )
 
-    annotated = cv2.resize(annotated, FRAME_SIZE)
-    push_frame(cam_id, annotated)
-    return is_alert, last_alert_time, annotated
+    return is_alert, annotated  # original size, caller will push after compositing
 
 
 # ================================================================
 # FALL DETECTOR
+# Receives the crowd-annotated frame (draw_frame) so fall bounding
+# boxes are drawn on top of the crowd overlay.  Inference runs on
+# the original clean frame for accuracy.
+# Resizes and calls push_frame once at the end.
 # ================================================================
-def run_fall_detection(
-    frame, cam_id, last_state, timestamp,
-    last_alert_time, last_evidence_time
-):
+def run_fall_detection(frame, draw_frame, cam_id, last_state, timestamp):
     results = fall_model(frame, classes=[0], verbose=False)[0]
 
     fall_detected = False
-    draw_frame    = frame.copy()
 
     for box in results.boxes:
         x1, y1, x2, y2 = box.xyxy[0].tolist()
@@ -283,47 +266,38 @@ def run_fall_detection(
                 (0, 255, 0), 1
             )
 
-    now = time.time()
-
     if fall_detected and not last_state:
-        # Log once per new fall event (transition to alert)
-        if now - last_alert_time >= FALL_ALERT_COOLDOWN:
-            last_alert_time = now
-
-            if now - last_evidence_time >= FALL_EVIDENCE_COOLDOWN:
-                safe_ts    = timestamp.replace(':', '-')
-                frame_path = f"{EVIDENCE_DIR}/fall_cam{cam_id}_{safe_ts}.jpg"
-                cv2.imwrite(frame_path, draw_frame)
-                last_evidence_time = now
-
-            db_insert(
-                "INSERT INTO fall_events (timestamp, is_fall) VALUES (?, ?)",
-                (timestamp, 1)
-            )
-            print(f"[{timestamp}] CAM-{cam_id:02d} Fall DETECTED")
+        safe_ts    = timestamp.replace(':', '-')
+        frame_path = f"{EVIDENCE_DIR}/fall_cam{cam_id}_{safe_ts}.jpg"
+        cv2.imwrite(frame_path, draw_frame)
+        db_insert(
+            "INSERT INTO fall_events (cam_id, timestamp, is_fall) VALUES (?, ?, ?)",
+            (cam_id, timestamp, 1)
+        )
+        print(f"[{timestamp}] CAM-{cam_id:02d} Fall DETECTED")
 
     elif (not fall_detected) and last_state:
-        # Fall just cleared — log once
         db_insert(
-            "INSERT INTO fall_events (timestamp, is_fall) VALUES (?, ?)",
-            (timestamp, 0)
+            "INSERT INTO fall_events (cam_id, timestamp, is_fall) VALUES (?, ?, ?)",
+            (cam_id, timestamp, 0)
         )
         print(f"[{timestamp}] CAM-{cam_id:02d} Fall CLEAR")
 
     annotated = cv2.resize(draw_frame, FRAME_SIZE)
     color = (0, 0, 255) if fall_detected else (0, 255, 0)
+    # y=70 so it sits below the crowd status line at y=40
     cv2.putText(
         annotated,
         "!! FALL DETECTED !!" if fall_detected else "OK",
-        (20, 40), cv2.FONT_HERSHEY_SIMPLEX, 1.2, color, 3
+        (20, 70), cv2.FONT_HERSHEY_SIMPLEX, 0.9, color, 2
     )
 
     push_frame(cam_id, annotated)
-    return fall_detected, last_alert_time, last_evidence_time, annotated
+    return fall_detected, annotated
 
 
 # ================================================================
-# CAMERA THREAD
+# CAMERA THREAD — runs both crowd and fall detection on every camera
 # ================================================================
 def camera_thread(cam_id, video_path):
     cap = cv2.VideoCapture(video_path)
@@ -335,16 +309,10 @@ def camera_thread(cam_id, video_path):
     src_fps     = cap.get(cv2.CAP_PROP_FPS) or 25
     frame_delay = 1.0 / src_fps
 
-    frame_num         = 0
-    last_crowd_state  = None
-    last_fall_state   = False
-    last_annotated    = None
-
-    # Cooldown timestamps (epoch seconds) — NOT reset on video loop so
-    # a looping video doesn't immediately re-fire the same alert.
-    last_crowd_alert_time   = 0.0
-    last_fall_alert_time    = 0.0
-    last_fall_evidence_time = 0.0
+    frame_num        = 0
+    last_crowd_state = None
+    last_fall_state  = False
+    last_annotated   = None
 
     print(f"CAM-{cam_id:02d} started: {video_path}  ({src_fps:.1f} fps)")
 
@@ -359,7 +327,6 @@ def camera_thread(cam_id, video_path):
             frame_num        = 0
             last_crowd_state = None
             last_fall_state  = False
-            # cooldown timers intentionally NOT reset here
             continue
 
         frame_num += 1
@@ -372,18 +339,15 @@ def camera_thread(cam_id, video_path):
         else:
             timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-            if cam_id == CAM_FALL:
-                last_fall_state, last_fall_alert_time, last_fall_evidence_time, last_annotated = \
-                    run_fall_detection(
-                        frame, cam_id, last_fall_state, timestamp,
-                        last_fall_alert_time, last_fall_evidence_time
-                    )
-            else:
-                last_crowd_state, last_crowd_alert_time, last_annotated = \
-                    run_crowd_detection(
-                        frame, cam_id, last_crowd_state,
-                        frame_num, timestamp, last_crowd_alert_time
-                    )
+            # Crowd detection first — returns original-size annotated frame
+            last_crowd_state, crowd_annotated = run_crowd_detection(
+                frame, cam_id, last_crowd_state, frame_num, timestamp
+            )
+
+            # Fall detection draws on top of crowd overlay, then pushes
+            last_fall_state, last_annotated = run_fall_detection(
+                frame, crowd_annotated, cam_id, last_fall_state, timestamp
+            )
 
         elapsed   = time.time() - t_start
         sleep_for = frame_delay - elapsed

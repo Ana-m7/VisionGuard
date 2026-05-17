@@ -1,4 +1,4 @@
-from fastapi import FastAPI, UploadFile, File
+from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 import sqlite3
@@ -21,6 +21,37 @@ app.add_middleware(
 DB_PATH = os.path.join(os.path.dirname(__file__), "../crowd_events.db")
 RECENT_WINDOW_SECONDS = 60
 STREAM_INTERVAL = 0.05  # seconds (~20 FPS)
+
+
+@app.on_event("startup")
+def clear_db_on_startup():
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+    # Drop and recreate so schema changes (e.g. new columns) always take effect.
+    cur.execute("DROP TABLE IF EXISTS crowd_events")
+    cur.execute("DROP TABLE IF EXISTS fall_events")
+    cur.execute("""
+        CREATE TABLE crowd_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            cam_id INTEGER,
+            timestamp TEXT,
+            person_count INTEGER,
+            max_zone_density INTEGER,
+            is_alert INTEGER,
+            frame_path TEXT
+        )
+    """)
+    cur.execute("""
+        CREATE TABLE fall_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            cam_id INTEGER,
+            timestamp TEXT,
+            is_fall INTEGER
+        )
+    """)
+    conn.commit()
+    conn.close()
+    print("DB reset on startup.")
 
 
 def get_db():
@@ -68,6 +99,10 @@ def generate_stream(cam_id):
 
 @app.get("/video_feed/{cam_id}")
 def video_feed(cam_id: int):
+    with frame_lock:
+        has_feed = cam_id in latest_frames
+    if not has_feed:
+        raise HTTPException(status_code=404, detail="No stream for this camera")
     return StreamingResponse(
         generate_stream(cam_id),
         media_type="multipart/x-mixed-replace; boundary=frame"
@@ -129,7 +164,7 @@ def get_latest():
     cur = conn.cursor()
     window = f"datetime('now', 'localtime', '-{RECENT_WINDOW_SECONDS} seconds')"
     cur.execute(f"""
-        SELECT id, timestamp, person_count, max_zone_density, is_alert
+        SELECT id, cam_id, timestamp, person_count, max_zone_density, is_alert
         FROM crowd_events
         WHERE is_alert = 1
         AND timestamp >= {window}
@@ -139,12 +174,12 @@ def get_latest():
     conn.close()
     if not row:
         return {
-            "id": 0, "timestamp": None,
+            "id": 0, "cam_id": None, "timestamp": None,
             "person_count": 0, "zone_density": 0, "is_alert": 0
         }
     return {
-        "id": row[0], "timestamp": row[1],
-        "person_count": row[2], "zone_density": row[3], "is_alert": row[4]
+        "id": row[0], "cam_id": row[1], "timestamp": row[2],
+        "person_count": row[3], "zone_density": row[4], "is_alert": row[5]
     }
 
 
@@ -184,7 +219,7 @@ def get_latest_fall():
         return {"id": 0, "is_fall": False, "timestamp": None}
     window = f"datetime('now', 'localtime', '-{RECENT_WINDOW_SECONDS} seconds')"
     cur.execute(f"""
-        SELECT id, timestamp, is_fall
+        SELECT id, cam_id, timestamp, is_fall
         FROM fall_events
         WHERE is_fall = 1
         AND timestamp >= {window}
@@ -193,8 +228,8 @@ def get_latest_fall():
     row = cur.fetchone()
     conn.close()
     if not row:
-        return {"id": 0, "is_fall": False, "timestamp": None}
-    return {"id": row[0], "is_fall": bool(row[2]), "timestamp": row[1]}
+        return {"id": 0, "cam_id": None, "is_fall": False, "timestamp": None}
+    return {"id": row[0], "cam_id": row[1], "is_fall": bool(row[3]), "timestamp": row[2]}
 
 
 # ================================================================
@@ -216,4 +251,13 @@ def clear_alerts():
     return {"ok": True}
 
 if __name__ == "__main__":
-    uvicorn.run("app:app", host="127.0.0.1",port=8000, reload=True)
+    # reload=True with reload_includes scoped to .py only — prevents uvicorn's
+    # StatReload from restarting the server when crowd_events.db or evidence
+    # frames are written (which would kill all active MJPEG streams).
+    uvicorn.run(
+        "app:app",
+        host="127.0.0.1",
+        port=8000,
+        reload=True,
+        reload_includes=["*.py"],
+    )

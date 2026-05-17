@@ -1,0 +1,194 @@
+(venv) [anamay@archhouse VisionGuard]$ cear
+bash: cear: command not found
+(venv) [anamay@archhouse VisionGuard]$ python backend/app.py 
+/home/anamay/Programming/anoushka/VisionGuard/backend/app.py:26: DeprecationWarning: 
+        on_event is deprecated, use lifespan event handlers instead.
+
+        Read more about it in the
+        [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+        
+  @app.on_event("startup")
+INFO:     Will watch for changes in these directories: ['/home/anamay/Programming/anoushka/VisionGuard']
+INFO:     Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)
+WARNING:  --reload-include and --reload-exclude have no effect unless watchfiles is installed.
+INFO:     Started reloader process [117204] using StatReload
+INFO:     Started server process [117247]
+INFO:     Waiting for application startup.
+DB cleared on startup.
+INFO:     Application startup complete.
+INFO:     127.0.0.1:49996 - "GET /latest HTTP/1.1" 500 Internal Server Error
+ERROR:    Exception in ASGI application
+Traceback (most recent call last):
+  File "/home/anamay/Programming/anoushka/VisionGuard/venv/lib/python3.14/site-packages/uvicorn/protocols/http/h11_impl.py", line 415, in run_asgi
+    result = await app(  # type: ignore[func-returns-value]
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        self.scope, self.receive, self.send
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/home/anamay/Programming/anoushka/VisionGuard/venv/lib/python3.14/site-packages/uvicorn/middleware/proxy_headers.py", line 56, in __call__
+    return await self.app(scope, receive, send)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/anamay/Programming/anoushka/VisionGuard/venv/lib/python3.14/site-packages/fastapi/applications.py", line 1159, in __call__
+    await super().__call__(scope, receive, send)
+  File "/home/anamay/Programming/anoushka/VisionGuard/venv/lib/python3.14/site-packages/starlette/applications.py", line 90, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "/home/anamay/Programming/anoushka/VisionGuard/venv/lib/python3.14/site-packages/starlette/middleware/errors.py", line 186, in __call__
+    raise exc
+  File "/home/anamay/Programming/anoushka/VisionGuard/venv/lib/python3.14/site-packages/starlette/middleware/errors.py", line 164, in __call__
+    await self.app(scope, receive, _send)
+  File "/home/anamay/Programming/anoushka/VisionGuard/venv/lib/python3.14/site-packages/starlette/middleware/cors.py", line 96, in __call__
+    await self.simple_response(scope, receive, send, request_headers=headers)
+  File "/home/anamay/Programming/anoushka/VisionGuard/venv/lib/python3.14/site-packages/starlette/middleware/cors.py", line 154, in simple_response
+    await self.app(scope, receive, send)
+  File "/home/anamay/Programming/anoushka/VisionGuard/venv/lib/python3.14/site-packages/starlette/middleware/exceptions.py", line 63, in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+  File "/home/anamay/Programming/anoushka/VisionGuard/venv/lib/python3.14/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "/home/anamay/Programming/anoushka/VisionGuard/venv/lib/python3.14/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "/home/anamay/Programming/anoushka/VisionGuard/venv/lib/python3.14/site-packages/fastapi/middleware/asyncexitstack.py", line 18, in __call__
+    await self.app(scope, receive, send)
+  File "/home/anamay/Programming/anoushka/VisionGuard/venv/lib/python3.14/site-packages/starlette/routing.py", line 660, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "/home/anamay/Programming/anoushka/VisionGuard/venv/lib/python3.14/site-packages/starlette/routing.py", line 680, in app
+    await route.handle(scope, receive, send)
+  File "/home/anamay/Programming/anoushka/VisionGuard/venv/lib/python3.14/site-packages/starlette/routing.py", line 276, in handle
+    await self.app(scope, receive, send)
+  File "/home/anamay/Programming/anoushka/VisionGuard/venv/lib/python3.14/site-packages/fastapi/routing.py", line 134, in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+  File "/home/anamay/Programming/anoushka/VisionGuard/venv/lib/python3.14/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "/home/anamay/Programming/anoushka/VisionGuard/venv/lib/python3.14/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "/home/anamay/Programming/anoushka/VisionGuard/venv/lib/python3.14/site-packages/fastapi/routing.py", line 120, in app
+    response = await f(request)
+               ^^^^^^^^^^^^^^^^
+  File "/home/anamay/Programming/anoushka/VisionGuard/venv/lib/python3.14/site-packages/fastapi/routing.py", line 674, in app
+    raw_response = await run_endpoint_function(
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<3 lines>...
+    )
+    ^
+  File "/home/anamay/Programming/anoushka/VisionGuard/venv/lib/python3.14/site-packages/fastapi/routing.py", line 330, in run_endpoint_function
+    return await run_in_threadpool(dependant.call, **values)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/anamay/Programming/anoushka/VisionGuard/venv/lib/python3.14/site-packages/starlette/concurrency.py", line 32, in run_in_threadpool
+    return await anyio.to_thread.run_sync(func)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/anamay/Programming/anoushka/VisionGuard/venv/lib/python3.14/site-packages/anyio/to_thread.py", line 63, in run_sync
+    return await get_async_backend().run_sync_in_worker_thread(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        func, args, abandon_on_cancel=abandon_on_cancel, limiter=limiter
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/home/anamay/Programming/anoushka/VisionGuard/venv/lib/python3.14/site-packages/anyio/_backends/_asyncio.py", line 2518, in run_sync_in_worker_thread
+    return await future
+           ^^^^^^^^^^^^
+  File "/home/anamay/Programming/anoushka/VisionGuard/venv/lib/python3.14/site-packages/anyio/_backends/_asyncio.py", line 1002, in run
+    result = context.run(func, *args)
+  File "/home/anamay/Programming/anoushka/VisionGuard/backend/app.py", line 149, in get_latest
+    cur.execute(f"""
+    ~~~~~~~~~~~^^^^^
+        SELECT id, cam_id, timestamp, person_count, max_zone_density, is_alert
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<3 lines>...
+        ORDER BY id DESC LIMIT 1
+        ^^^^^^^^^^^^^^^^^^^^^^^^
+    """)
+    ^^^^
+sqlite3.OperationalError: no such column: cam_id
+INFO:     127.0.0.1:50012 - "GET /fall/latest HTTP/1.1" 500 Internal Server Error
+ERROR:    Exception in ASGI application
+Traceback (most recent call last):
+  File "/home/anamay/Programming/anoushka/VisionGuard/venv/lib/python3.14/site-packages/uvicorn/protocols/http/h11_impl.py", line 415, in run_asgi
+    result = await app(  # type: ignore[func-returns-value]
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        self.scope, self.receive, self.send
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/home/anamay/Programming/anoushka/VisionGuard/venv/lib/python3.14/site-packages/uvicorn/middleware/proxy_headers.py", line 56, in __call__
+    return await self.app(scope, receive, send)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/anamay/Programming/anoushka/VisionGuard/venv/lib/python3.14/site-packages/fastapi/applications.py", line 1159, in __call__
+    await super().__call__(scope, receive, send)
+  File "/home/anamay/Programming/anoushka/VisionGuard/venv/lib/python3.14/site-packages/starlette/applications.py", line 90, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "/home/anamay/Programming/anoushka/VisionGuard/venv/lib/python3.14/site-packages/starlette/middleware/errors.py", line 186, in __call__
+    raise exc
+  File "/home/anamay/Programming/anoushka/VisionGuard/venv/lib/python3.14/site-packages/starlette/middleware/errors.py", line 164, in __call__
+    await self.app(scope, receive, _send)
+  File "/home/anamay/Programming/anoushka/VisionGuard/venv/lib/python3.14/site-packages/starlette/middleware/cors.py", line 96, in __call__
+    await self.simple_response(scope, receive, send, request_headers=headers)
+  File "/home/anamay/Programming/anoushka/VisionGuard/venv/lib/python3.14/site-packages/starlette/middleware/cors.py", line 154, in simple_response
+    await self.app(scope, receive, send)
+  File "/home/anamay/Programming/anoushka/VisionGuard/venv/lib/python3.14/site-packages/starlette/middleware/exceptions.py", line 63, in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+  File "/home/anamay/Programming/anoushka/VisionGuard/venv/lib/python3.14/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "/home/anamay/Programming/anoushka/VisionGuard/venv/lib/python3.14/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "/home/anamay/Programming/anoushka/VisionGuard/venv/lib/python3.14/site-packages/fastapi/middleware/asyncexitstack.py", line 18, in __call__
+    await self.app(scope, receive, send)
+  File "/home/anamay/Programming/anoushka/VisionGuard/venv/lib/python3.14/site-packages/starlette/routing.py", line 660, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "/home/anamay/Programming/anoushka/VisionGuard/venv/lib/python3.14/site-packages/starlette/routing.py", line 680, in app
+    await route.handle(scope, receive, send)
+  File "/home/anamay/Programming/anoushka/VisionGuard/venv/lib/python3.14/site-packages/starlette/routing.py", line 276, in handle
+    await self.app(scope, receive, send)
+  File "/home/anamay/Programming/anoushka/VisionGuard/venv/lib/python3.14/site-packages/fastapi/routing.py", line 134, in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+  File "/home/anamay/Programming/anoushka/VisionGuard/venv/lib/python3.14/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "/home/anamay/Programming/anoushka/VisionGuard/venv/lib/python3.14/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "/home/anamay/Programming/anoushka/VisionGuard/venv/lib/python3.14/site-packages/fastapi/routing.py", line 120, in app
+    response = await f(request)
+               ^^^^^^^^^^^^^^^^
+  File "/home/anamay/Programming/anoushka/VisionGuard/venv/lib/python3.14/site-packages/fastapi/routing.py", line 674, in app
+    raw_response = await run_endpoint_function(
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<3 lines>...
+    )
+    ^
+  File "/home/anamay/Programming/anoushka/VisionGuard/venv/lib/python3.14/site-packages/fastapi/routing.py", line 330, in run_endpoint_function
+    return await run_in_threadpool(dependant.call, **values)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/anamay/Programming/anoushka/VisionGuard/venv/lib/python3.14/site-packages/starlette/concurrency.py", line 32, in run_in_threadpool
+    return await anyio.to_thread.run_sync(func)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/anamay/Programming/anoushka/VisionGuard/venv/lib/python3.14/site-packages/anyio/to_thread.py", line 63, in run_sync
+    return await get_async_backend().run_sync_in_worker_thread(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        func, args, abandon_on_cancel=abandon_on_cancel, limiter=limiter
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/home/anamay/Programming/anoushka/VisionGuard/venv/lib/python3.14/site-packages/anyio/_backends/_asyncio.py", line 2518, in run_sync_in_worker_thread
+    return await future
+           ^^^^^^^^^^^^
+  File "/home/anamay/Programming/anoushka/VisionGuard/venv/lib/python3.14/site-packages/anyio/_backends/_asyncio.py", line 1002, in run
+    result = context.run(func, *args)
+  File "/home/anamay/Programming/anoushka/VisionGuard/backend/app.py", line 204, in get_latest_fall
+    cur.execute(f"""
+    ~~~~~~~~~~~^^^^^
+        SELECT id, cam_id, timestamp, is_fall
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<3 lines>...
+        ORDER BY id DESC LIMIT 1
+        ^^^^^^^^^^^^^^^^^^^^^^^^
+    """)
+    ^^^^
+sqlite3.OperationalError: no such column: cam_id
+INFO:     127.0.0.1:50014 - "GET /video_feed/2?t=1779047311160 HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:49984 - "GET /stats HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50022 - "GET /video_feed/1?t=1779047311160 HTTP/1.1" 404 Not Found
+^CINFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [117247]
+INFO:     Stopping reloader process [117204]
+(venv) [anamay@archhouse VisionGuard]$ ^C
+(venv) [anamay@archhouse VisionGuard]$ 

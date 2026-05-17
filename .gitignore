@@ -3,10 +3,10 @@ evidence_frames/
 crowd_events.db
 
 # model weights
-*.pt
+# *.pt
 
 # videos
-videos/
+# videos/
 
 # python cache
 __pycache__/

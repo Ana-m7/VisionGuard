@@ -49,8 +49,12 @@ html,body{height:100%;font-family:var(--sans);background:var(--bg);color:var(--t
 .stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;padding:10px 16px}
 .stat{background:var(--surf);border:0.5px solid var(--border);border-radius:8px;padding:11px 14px}
 .stat-lbl{font-size:10px;font-family:var(--mono);color:var(--text2);letter-spacing:.5px;margin-bottom:5px}
-.stat-num{font-size:26px;font-weight:600;font-family:var(--mono);line-height:1;transition:transform .2s}
+/* FIX: removed transition on transform — it caused the number to visually
+   jump/overflow the card box during the scale animation every 2s poll */
+.stat-num{font-size:26px;font-weight:600;font-family:var(--mono);line-height:1;display:inline-block}
 .stat-num.g{color:var(--green)}.stat-num.r{color:var(--red)}.stat-num.a{color:var(--amber)}.stat-num.b{color:var(--blue)}
+@keyframes numPop{0%{transform:scale(1)}40%{transform:scale(1.25)}100%{transform:scale(1)}}
+.stat-num.popping{animation:numPop .35s ease}
 
 /* ── MAIN GRID ── */
 .main{display:grid;grid-template-columns:1fr 296px;gap:8px;padding:0 16px 16px}
@@ -61,6 +65,7 @@ html,body{height:100%;font-family:var(--sans);background:var(--bg);color:var(--t
 .cam.a-fight{border-color:var(--red)}
 .cam.a-gathering{border-color:var(--amber)}
 .cam.a-crash{border-color:var(--orange)}
+.cam.a-fall{border-color:var(--red)}
 .cam-head{display:flex;align-items:center;justify-content:space-between;padding:6px 8px;background:var(--surf2);border-bottom:0.5px solid var(--border)}
 .cam-id{font-family:var(--mono);font-size:10px;color:var(--text2)}
 .cam-controls{display:flex;align-items:center;gap:6px}
@@ -83,6 +88,7 @@ html,body{height:100%;font-family:var(--sans);background:var(--bg);color:var(--t
 .det-box.gathering{border-color:#e3b341}.det-box.gathering .det-lbl{background:#e3b341;color:#1a0f00}
 .det-box.fight{border-color:#f85149}.det-box.fight .det-lbl{background:#f85149}
 .det-box.crash{border-color:#ff7b54}.det-box.crash .det-lbl{background:#ff7b54}
+.det-box.fall{border-color:#f85149}.det-box.fall .det-lbl{background:#f85149}
 
 /* ── CAM BADGE / OVERLAY ── */
 .cam-badge{position:absolute;top:6px;right:6px;font-family:var(--mono);font-size:9px;padding:3px 8px;border-radius:4px;color:#fff;z-index:8;display:none;font-weight:600;animation:bdgBlink .9s ease infinite;letter-spacing:.5px}
@@ -155,8 +161,6 @@ html,body{height:100%;font-family:var(--sans);background:var(--bg);color:var(--t
 .sim-btn{font-family:var(--mono);font-size:9px;padding:3px 10px;border-radius:4px;border:0.5px solid var(--border);background:var(--surf2);color:var(--text2);cursor:pointer;transition:.15s}
 .sim-btn:hover{border-color:var(--blue);color:var(--blue)}
 .sim-btn.active{border-color:var(--green);color:var(--green);background:var(--bg-green)}
-.sim-speed{display:flex;align-items:center;gap:6px;margin-left:auto}
-.sim-speed select{font-family:var(--mono);font-size:9px;background:var(--surf2);border:0.5px solid var(--border);color:var(--text2);padding:2px 6px;border-radius:4px;cursor:pointer}
 </style>
 </head>
 <body>
@@ -189,13 +193,14 @@ html,body{height:100%;font-family:var(--sans);background:var(--bg);color:var(--t
   <span class="sim-btn" id="backendStatus" style="cursor:default;">&#8987; Connecting...</span>
   <span style="color:var(--text3);margin-left:4px" id="pollStatus">Polling every 2s</span>
   <button class="sim-btn" style="margin-left:8px" onclick="clearAllAlerts()">&#10005; Clear All</button>
+  <button class="sim-btn" onclick="clearAlertDb()">&#128465; Clear DB</button>
 </div>
 
-<!-- STATS — 3 cards only -->
+<!-- STATS -->
 <div class="stats">
   <div class="stat"><div class="stat-lbl">CAMERAS ONLINE</div><div class="stat-num g">4 / 4</div></div>
-  <div class="stat"><div class="stat-lbl">ALERTS TODAY</div><div class="stat-num r" id="alert-count">0</div></div>
-  <div class="stat"><div class="stat-lbl">FRAMES PROCESSED</div><div class="stat-num a" id="frame-count">14,820</div></div>
+  <div class="stat"><div class="stat-lbl">ALERTS (LAST 60s)</div><div class="stat-num r" id="alert-count">0</div></div>
+  <div class="stat"><div class="stat-lbl">FRAMES PROCESSED</div><div class="stat-num a" id="frame-count">0</div></div>
 </div>
 
 <!-- MAIN -->
@@ -410,6 +415,13 @@ const TYPES = {
     color:'#ff7b54', textColor:'#fff', sev:'High',
     desc:'Vehicle or object collision detected',
     action:'Emergency services may be required'
+  },
+  // registered here too so TYPES.fall is always defined
+  fall: {
+    label:'FALL DETECTED', short:'Fall', icon:'⚠',
+    color:'#f85149', textColor:'#fff', sev:'Critical',
+    desc:'Person fall detected — possible medical emergency',
+    action:'Send medical assistance immediately'
   }
 };
 
@@ -425,74 +437,46 @@ const DET_POS = {
   1:[12,22,38,58], 2:[28,44,44,42], 3:[26,18,44,62], 4:[14,18,62,60]
 };
 
-// Modal preview SVG scenes
-const MPREV = {
-  1:`<rect width="390" height="130" fill="#070a0f"/>
-     <rect x="0" y="85" width="390" height="45" fill="#0c1018"/>
-     <rect x="105" y="8" width="180" height="77" fill="#0f1820" rx="2"/>
-     <rect x="165" y="44" width="60" height="41" fill="#09111d" rx="1"/>
-     <circle cx="60" cy="70" r="9" fill="#182030"/><rect x="54" y="79" width="12" height="20" fill="#182030" rx="1"/>
-     <circle cx="305" cy="72" r="9" fill="#182030"/><rect x="299" y="81" width="12" height="20" fill="#182030" rx="1"/>
-     <circle cx="85" cy="68" r="7" fill="#182030"/><rect x="80" y="75" width="10" height="18" fill="#182030" rx="1"/>
-     <circle cx="280" cy="70" r="7" fill="#182030"/><rect x="275" y="77" width="10" height="18" fill="#182030" rx="1"/>`,
-  2:`<rect width="390" height="130" fill="#070a0f"/>
-     <rect x="0" y="70" width="390" height="60" fill="#0c1018"/>
-     <line x1="60" y1="70" x2="60" y2="130" stroke="#16253a" stroke-width="1" stroke-dasharray="5,3"/>
-     <line x1="130" y1="70" x2="130" y2="130" stroke="#16253a" stroke-width="1" stroke-dasharray="5,3"/>
-     <line x1="200" y1="70" x2="200" y2="130" stroke="#16253a" stroke-width="1" stroke-dasharray="5,3"/>
-     <line x1="270" y1="70" x2="270" y2="130" stroke="#16253a" stroke-width="1" stroke-dasharray="5,3"/>
-     <line x1="340" y1="70" x2="340" y2="130" stroke="#16253a" stroke-width="1" stroke-dasharray="5,3"/>
-     <rect x="63" y="75" width="62" height="28" fill="#141e2c" rx="3"/>
-     <rect x="133" y="77" width="62" height="28" fill="#141e2c" rx="3"/>
-     <rect x="203" y="73" width="62" height="28" fill="#141e2c" rx="3"/>
-     <rect x="273" y="76" width="62" height="28" fill="#141e2c" rx="3"/>`,
-  3:`<rect width="390" height="130" fill="#070a0f"/>
-     <rect x="0" y="0" width="75" height="130" fill="#060809"/>
-     <rect x="315" y="0" width="75" height="130" fill="#060809"/>
-     <line x1="75" y1="20" x2="75" y2="110" stroke="#111820" stroke-width="1"/>
-     <line x1="315" y1="20" x2="315" y2="110" stroke="#111820" stroke-width="1"/>
-     <circle cx="165" cy="56" r="9" fill="#1a2030"/><rect x="159" y="65" width="12" height="22" fill="#1a2030" rx="1"/>
-     <circle cx="200" cy="60" r="9" fill="#1a2030"/><rect x="194" y="69" width="12" height="22" fill="#1a2030" rx="1"/>`,
-  4:`<rect width="390" height="130" fill="#070a0f"/>
-     <rect x="0" y="86" width="390" height="44" fill="#0a0f14"/>
-     <rect x="18" y="50" width="95" height="38" fill="#111820" rx="2"/>
-     <rect x="148" y="53" width="95" height="38" fill="#111820" rx="2"/>
-     <rect x="278" y="50" width="95" height="38" fill="#111820" rx="2"/>
-     <rect x="30" y="36" width="65" height="18" fill="#0d1928" rx="1"/>
-     <rect x="160" y="38" width="65" height="18" fill="#0d1928" rx="1"/>
-     <rect x="290" y="36" width="65" height="18" fill="#0d1928" rx="1"/>
-     <circle cx="65" cy="67" r="7" fill="#1e2a3a"/>
-     <circle cx="195" cy="70" r="7" fill="#1e2a3a"/>
-     <circle cx="325" cy="67" r="7" fill="#1e2a3a"/>`
-};
-
-// Modal bounding boxes [x,y,w,h in SVG coords]
-const MBOX = {
-  1:[55,22,145,90], 2:[125,66,190,50], 3:[88,18,195,100], 4:[55,24,265,76]
-};
-
 // ── STATE ────────────────────────────────────────────────────────
-let alertCount = 0;
-let frameCount = 14820;
 let isDark = true;
 let activeAlerts = {};
 let currentModal = null;
 let tabAll = false;
+
+// FIX: track last seen DB IDs so we don't re-fire the same alert
+let lastCrowdId = 0;
+let lastFallId  = 0;
+
+// FIX: track last displayed stat values so we only animate on real changes
+let lastAlertCount = -1;
+let lastFrameCount = -1;
+
+let backendConnected = false;
+const POLL_INTERVAL_MS = 3000;
+const MODAL_COOLDOWN_MS = 30000;
+let lastModalAt = {};
+let pollInFlight = false;
 
 // ── INIT ─────────────────────────────────────────────────────────
 window.addEventListener('DOMContentLoaded', () => {
   const now = new Date();
   const el = document.getElementById('init-time');
   if (el) el.textContent = p(now.getHours())+':'+p(now.getMinutes())+' · System boot';
+  lastCrowdId = parseInt(localStorage.getItem('vg_last_crowd_id') || '0', 10) || 0;
+  lastFallId = parseInt(localStorage.getItem('vg_last_fall_id') || '0', 10) || 0;
+  try {
+    lastModalAt = JSON.parse(localStorage.getItem('vg_last_modal_at') || '{}');
+  } catch (e) {
+    lastModalAt = {};
+  }
   setInterval(updateClock, 1000); updateClock();
   setInterval(updateTimestamps, 1000); updateTimestamps();
   pollBackend();
-  setInterval(pollBackend, 2000);
+  setInterval(pollBackend, POLL_INTERVAL_MS);
 });
 
 function p(n){ return n<10?'0'+n:''+n; }
 function ts(){ const n=new Date(); return p(n.getHours())+':'+p(n.getMinutes())+':'+p(n.getSeconds()); }
-function tsShort(){ const n=new Date(); return p(n.getHours())+':'+p(n.getMinutes()); }
 function updateClock(){ const el=document.getElementById('clock'); if(el) el.textContent=ts(); }
 function updateTimestamps(){ for(let i=1;i<=4;i++){ const el=document.getElementById('ts-'+i); if(el) el.textContent=ts(); } }
 
@@ -500,7 +484,45 @@ function clearAllAlerts(){
   [1,2,3,4].forEach(i => clearAlert(i));
 }
 
-// ── MANUAL TRIGGER (for UI testing only) ─────────────────────────
+async function clearAlertDb(){
+  if(!confirm('Clear all alerts from the database?')) return;
+  try {
+    const res = await fetch('http://localhost:8000/alerts/clear', { method: 'POST' });
+    if(!res.ok) throw new Error('Clear failed');
+    clearAllAlerts();
+    lastCrowdId = 0;
+    lastFallId = 0;
+    lastAlertCount = 0;
+    lastFrameCount = 0;
+    localStorage.setItem('vg_last_crowd_id', '0');
+    localStorage.setItem('vg_last_fall_id', '0');
+    updateStatCard('alert-count', 0, 0);
+    updateStatCard('frame-count', 0, 0);
+  } catch (e) {
+    alert('Failed to clear database. Is the backend running?');
+  }
+}
+
+// ── STAT CARD UPDATE (only animate when value actually changes) ──
+// FIX: Previously the scale animation ran on every 2s poll regardless of
+// whether the number changed, causing the stat-num element to visually
+// overflow its card box and appear to "jump out" repeatedly.
+function updateStatCard(id, newVal, lastVal){
+  const el = document.getElementById(id);
+  if (!el) return newVal;
+  const display = typeof newVal === 'number' ? newVal.toLocaleString() : newVal;
+  if (newVal !== lastVal) {
+    el.textContent = display;
+    el.classList.remove('popping');
+    // force reflow so re-adding the class restarts the animation
+    void el.offsetWidth;
+    el.classList.add('popping');
+    setTimeout(() => el.classList.remove('popping'), 400);
+  }
+  return newVal;
+}
+
+// ── MANUAL TRIGGER ────────────────────────────────────────────────
 function manualTrigger(cam){
   const types = Object.keys(TYPES).filter(t => t !== 'fall');
   if(activeAlerts[cam]){
@@ -538,7 +560,7 @@ function triggerAlert(cam, type){
   if(bdg){ bdg.className='cam-badge '+type; bdg.textContent=T.short.toUpperCase(); bdg.style.display='block'; }
 
   const cfEl = document.getElementById('conf-'+cam);
-  if(cfEl){ cfEl.textContent='CONF:'+conf+' FRAME:'+frameCount.toLocaleString(); cfEl.style.display='block'; }
+  if(cfEl){ cfEl.textContent='CONF:'+conf; cfEl.style.display='block'; }
 
   const camEl = document.getElementById('cam-'+cam);
   if(camEl){ camEl.className='cam a-'+type; }
@@ -552,10 +574,6 @@ function triggerAlert(cam, type){
   if(clrBtn) clrBtn.style.display='block';
 
   playBeep(type);
-
-  alertCount++;
-  const cntEl = document.getElementById('alert-count');
-  if(cntEl){ cntEl.textContent=alertCount; cntEl.style.transform='scale(1.35)'; setTimeout(()=>cntEl.style.transform='',300); }
 
   const alertTime = ts();
   addToLog(cam, type, T, C, conf, alertTime);
@@ -579,7 +597,7 @@ function flashCam(cam, color){
 // ── CLEAR ALERT ──────────────────────────────────────────────────
 function clearAlert(cam){
   delete activeAlerts[cam];
-  ['det-','bdg-','conf-'].forEach(p=>{ const el=document.getElementById(p+cam); if(el) el.style.display='none'; });
+  ['det-','bdg-','conf-'].forEach(pfx=>{ const el=document.getElementById(pfx+cam); if(el) el.style.display='none'; });
   const clr=document.getElementById('clr-'+cam); if(clr) clr.style.display='none';
   const c=document.getElementById('cam-'+cam); if(c) c.className='cam';
   const st=document.getElementById('st-'+cam);
@@ -613,14 +631,13 @@ function playBeep(type){
 }
 
 // ── EVENT LOG ────────────────────────────────────────────────────
-const ICONS={gathering:'',fight:'',crash:'',ok:''};
+const ICONS={gathering:'',fight:'',crash:'',fall:'⚠',ok:''};
 
 function addToLog(cam, type, T, C, conf, alertTime){
   const list=document.getElementById('evt-list'); if(!list) return;
   const timeStr = alertTime || ts();
   const evt=document.createElement('div');
   evt.className='evt new';
-  const icColor = {gathering:'var(--amber)',fight:'var(--red)',crash:'var(--orange)',fall:'var(--red)'}[type]||'var(--red)';
   evt.innerHTML=`
     <div class="evt-ic ${type}">${ICONS[type]||'!'}</div>
     <div class="evt-body">
@@ -630,18 +647,25 @@ function addToLog(cam, type, T, C, conf, alertTime){
       <div class="evt-time">${timeStr}</div>
     </div>`;
   list.insertBefore(evt, list.firstChild);
-  // no limit — keep all events so user can scroll through history
 }
 
 // ── MODAL ────────────────────────────────────────────────────────
 function showModal(cam, type, T, C, conf, timestamp){
+  // FIX: don't open a second modal if one is already visible
+  if(document.getElementById('backdrop').classList.contains('open')) return;
+  const now = Date.now();
+  if(lastModalAt[type] && (now - lastModalAt[type]) < MODAL_COOLDOWN_MS) return;
+  lastModalAt[type] = now;
+  localStorage.setItem('vg_last_modal_at', JSON.stringify(lastModalAt));
   currentModal={cam,type};
 
-  // Big alert icon in the top area
   const iconArea = document.getElementById('m-prev');
   if(iconArea){
     const iconMap = {gathering:'👥', fight:'🚨', crash:'💥', fall:'🚨'};
-    const bgMap = {gathering:'rgba(227,179,65,0.15)', fight:'rgba(248,81,73,0.15)', crash:'rgba(255,123,84,0.15)', fall:'rgba(248,81,73,0.15)'};
+    const bgMap = {
+      gathering:'rgba(227,179,65,0.15)', fight:'rgba(248,81,73,0.15)',
+      crash:'rgba(255,123,84,0.15)',     fall:'rgba(248,81,73,0.15)'
+    };
     iconArea.style.background = bgMap[type] || 'var(--surf2)';
     iconArea.innerHTML = `<div style="text-align:center">
       <div style="font-size:52px;line-height:1">${iconMap[type]||'⚠'}</div>
@@ -666,7 +690,6 @@ function showModal(cam, type, T, C, conf, timestamp){
 }
 
 function closeModal(){ document.getElementById('backdrop').classList.remove('open'); currentModal=null; }
-
 function backdropClick(e){ if(e.target.id==='backdrop') closeModal(); }
 
 function acknowledgeAlert(){
@@ -704,19 +727,7 @@ function toggleTheme(){
   document.getElementById('themeBtn').textContent=isDark?'☾ Dark':'☀ Light';
 }
 
-// ── BACKEND POLLING ───────────────────────────────────────────────
-let backendConnected = false;
-let lastCrowdId = 0;
-let lastFallId = 0;
-
-// Register fall type once
-TYPES.fall = {
-  label:'FALL DETECTED', short:'Fall', icon:'⚠',
-  color:'#f85149', textColor:'#fff', sev:'Critical',
-  desc:'Person fall detected — possible medical emergency',
-  action:'Send medical assistance immediately'
-};
-
+// ── BACKEND STATUS ────────────────────────────────────────────────
 function setBackendStatus(connected){
   const btn = document.getElementById('backendStatus');
   const poll = document.getElementById('pollStatus');
@@ -736,7 +747,10 @@ function setBackendStatus(connected){
   }
 }
 
+// ── BACKEND POLLING ───────────────────────────────────────────────
 async function pollBackend(){
+  if(pollInFlight) return;
+  pollInFlight = true;
   try {
     const [stats, latest, latestFall] = await Promise.all([
       fetch('http://localhost:8000/stats').then(r => r.json()),
@@ -744,16 +758,16 @@ async function pollBackend(){
       fetch('http://localhost:8000/fall/latest').then(r => r.json())
     ]);
 
-    // Update stat cards from real data
-    const cntEl = document.getElementById('alert-count');
-    if(cntEl) cntEl.textContent = stats.alert_count;
-    const fcEl = document.getElementById('frame-count');
-    if(fcEl) fcEl.textContent = stats.frame_count.toLocaleString();
+    // FIX: only update stat cards when the value actually changes so the
+    // pop animation doesn't fire every 2s even when nothing has changed.
+    lastAlertCount = updateStatCard('alert-count', stats.alert_count, lastAlertCount);
+    lastFrameCount = updateStatCard('frame-count', stats.frame_count, lastFrameCount);
 
     // ── CAM-01: Crowd / Gathering ────────────────────────────────
     // Deduplicate by DB row ID — only fires once per unique alert row
     if(latest.is_alert && latest.id && latest.id !== lastCrowdId){
       lastCrowdId = latest.id;
+      localStorage.setItem('vg_last_crowd_id', String(lastCrowdId));
       if(!activeAlerts[1]) triggerAlert(1, 'gathering');
     }
 
@@ -761,21 +775,23 @@ async function pollBackend(){
     // Deduplicate by DB row ID — only fires once per unique fall row
     if(latestFall && latestFall.is_fall && latestFall.id && latestFall.id !== lastFallId){
       lastFallId = latestFall.id;
+      localStorage.setItem('vg_last_fall_id', String(lastFallId));
       if(!activeAlerts[3]) triggerAlert(3, 'fall');
     }
 
     if(!backendConnected){
       backendConnected = true;
       setBackendStatus(true);
-      console.log('[VisionGuard] Backend connected');
     }
 
   } catch(e) {
-    if(backendConnected || backendConnected === false){
+    if(backendConnected){
       backendConnected = false;
       setBackendStatus(false);
       console.warn('[VisionGuard] Backend offline:', e.message);
     }
+  } finally {
+    pollInFlight = false;
   }
 }
 </script>

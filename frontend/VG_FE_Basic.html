@@ -57,7 +57,7 @@ html,body{height:100%;font-family:var(--sans);background:var(--bg);color:var(--t
 .stat-num.popping{animation:numPop .35s ease}
 
 /* ── MAIN GRID ── */
-.main{display:grid;grid-template-columns:1fr 296px;gap:8px;padding:0 16px 16px}
+.main{display:grid;grid-template-columns:1fr 296px;gap:8px;padding:0 16px 16px;align-items:start}
 
 /* ── CAMERAS ── */
 .cam-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
@@ -75,7 +75,7 @@ html,body{height:100%;font-family:var(--sans);background:var(--bg);color:var(--t
 .trig-btn:hover{border-color:var(--red);color:var(--red);background:var(--bg-red)}
 
 /* ── CAM SCREEN ── */
-.cam-screen{position:relative;height:200px;background:var(--cam-bg);overflow:hidden}
+.cam-screen{position:relative;height:310px;background:var(--cam-bg);overflow:hidden}
 .cam-svg{position:absolute;inset:0;width:100%;height:100%}
 .scanline{position:absolute;inset:0;background:repeating-linear-gradient(transparent 0px,transparent 3px,rgba(0,0,0,.07) 3px,rgba(0,0,0,.07) 4px);pointer-events:none;z-index:3}
 .scan-beam{position:absolute;top:0;left:0;width:100%;height:2px;background:rgba(88,166,255,.12);animation:scanDown 5s linear infinite;pointer-events:none;z-index:4}
@@ -107,7 +107,7 @@ html,body{height:100%;font-family:var(--sans);background:var(--bg);color:var(--t
 @keyframes flashAnim{0%{box-shadow:inset 0 0 0 3px var(--fc,#f85149);opacity:1}100%{box-shadow:inset 0 0 0 0 var(--fc,#f85149);opacity:0}}
 
 /* ── SIDEBAR ── */
-.sidebar{display:flex;flex-direction:column;gap:8px}
+.sidebar{display:flex;flex-direction:column;gap:8px;align-self:start;position:sticky;top:54px;max-height:calc(100vh - 54px);overflow-y:auto}
 .panel{background:var(--surf);border:0.5px solid var(--border);border-radius:8px;padding:12px}
 .panel-title{font-family:var(--mono);font-size:10px;letter-spacing:.8px;color:var(--text2);text-transform:uppercase;margin-bottom:10px}
 .tabs{display:flex;margin-bottom:10px;border-bottom:0.5px solid var(--border)}
@@ -198,7 +198,7 @@ html,body{height:100%;font-family:var(--sans);background:var(--bg);color:var(--t
 
 <!-- STATS -->
 <div class="stats">
-  <div class="stat"><div class="stat-lbl">CAMERAS ONLINE</div><div class="stat-num g">4 / 4</div></div>
+  <div class="stat"><div class="stat-lbl">CAMERAS LIVE</div><div class="stat-num g">2 / 2</div></div>
   <div class="stat"><div class="stat-lbl">ALERTS (LAST 60s)</div><div class="stat-num r" id="alert-count">0</div></div>
   <div class="stat"><div class="stat-lbl">FRAMES PROCESSED</div><div class="stat-num a" id="frame-count">0</div></div>
 </div>
@@ -219,10 +219,8 @@ html,body{height:100%;font-family:var(--sans);background:var(--bg);color:var(--t
         </div>
       </div>
       <div class="cam-screen">
-        <img src="http://localhost:8000/video_feed/1"
-             style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:1;"
-             onerror="this.style.display='none';document.getElementById('cam1-placeholder').style.display='block'">
-        <svg id="cam1-placeholder" class="cam-svg" style="display:none" viewBox="0 0 280 150" xmlns="http://www.w3.org/2000/svg">
+        <img id="stream-1" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:1;display:none;">
+        <svg id="cam1-placeholder" class="cam-svg" viewBox="0 0 280 150" xmlns="http://www.w3.org/2000/svg">
           <rect width="280" height="150" fill="#070a0f"/>
           <text x="140" y="75" fill="#2a4060" font-size="10" font-family="monospace" text-anchor="middle">Waiting for stream...</text>
           <text x="140" y="90" fill="#1a3050" font-size="7" font-family="monospace" text-anchor="middle">YOLOv8 · CAM-01 · MAIN-ENTRANCE</text>
@@ -241,87 +239,27 @@ html,body{height:100%;font-family:var(--sans);background:var(--bg);color:var(--t
     <!-- CAM-02 -->
     <div class="cam" id="cam-2">
       <div class="cam-head">
-        <span class="cam-id">CAM-02 · Parking Lot</span>
+        <span class="cam-id">CAM-02 · Corridor B</span>
         <div class="cam-controls">
           <span class="cam-st" id="st-2"><span class="st-dot"></span><span style="color:var(--green)">Normal</span></span>
           <button class="trig-btn" onclick="manualTrigger(2)"> Trigger</button>
         </div>
       </div>
       <div class="cam-screen">
-        <img src="http://localhost:8000/video_feed/2"
-             style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:1;"
-             onerror="this.style.display='none';document.getElementById('cam2-placeholder').style.display='block'">
-        <svg id="cam2-placeholder" class="cam-svg" style="display:none" viewBox="0 0 280 150" xmlns="http://www.w3.org/2000/svg">
+        <img id="stream-2" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:1;display:none;">
+        <svg id="cam2-placeholder" class="cam-svg" viewBox="0 0 280 150" xmlns="http://www.w3.org/2000/svg">
           <rect width="280" height="150" fill="#070a0f"/>
           <text x="140" y="75" fill="#2a4060" font-size="10" font-family="monospace" text-anchor="middle">Waiting for stream...</text>
-          <text x="140" y="90" fill="#1a3050" font-size="7" font-family="monospace" text-anchor="middle">CAM-02 · PARKING-LOT</text>
+          <text x="140" y="90" fill="#1a3050" font-size="7" font-family="monospace" text-anchor="middle">YOLOv8 · CAM-02 · CORRIDOR-B</text>
         </svg>
         <div class="det-box" id="det-2"><div class="det-lbl" id="dlbl-2"></div></div>
         <div class="cam-badge" id="bdg-2"></div>
         <div class="cam-conf" id="conf-2"></div>
         <div class="flash-overlay" id="fl-2"></div>
         <div class="scanline"></div>
-        <div class="scan-beam" style="animation-delay:1.25s"></div>
+        <div class="scan-beam" style="animation-delay:2.5s"></div>
         <div class="cam-foot"><span>YOLOv8 · 24FPS</span><span id="ts-2"></span></div>
         <button class="clear-btn" id="clr-2" onclick="clearAlert(2)">✕ Clear</button>
-      </div>
-    </div>
-
-    <!-- CAM-03 -->
-    <div class="cam" id="cam-3">
-      <div class="cam-head">
-        <span class="cam-id">CAM-03 · Corridor B</span>
-        <div class="cam-controls">
-          <span class="cam-st" id="st-3"><span class="st-dot"></span><span style="color:var(--green)">Normal</span></span>
-          <button class="trig-btn" onclick="manualTrigger(3)"> Trigger</button>
-        </div>
-      </div>
-      <div class="cam-screen">
-        <img src="http://localhost:8000/video_feed/3"
-             style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:1;"
-             onerror="this.style.display='none';document.getElementById('cam3-placeholder').style.display='block'">
-        <svg id="cam3-placeholder" class="cam-svg" style="display:none" viewBox="0 0 280 150" xmlns="http://www.w3.org/2000/svg">
-          <rect width="280" height="150" fill="#070a0f"/>
-          <text x="140" y="75" fill="#2a4060" font-size="10" font-family="monospace" text-anchor="middle">Waiting for stream...</text>
-          <text x="140" y="90" fill="#1a3050" font-size="7" font-family="monospace" text-anchor="middle">OptFlow · CAM-03 · CORRIDOR-B</text>
-        </svg>
-        <div class="det-box" id="det-3"><div class="det-lbl" id="dlbl-3"></div></div>
-        <div class="cam-badge" id="bdg-3"></div>
-        <div class="cam-conf" id="conf-3"></div>
-        <div class="flash-overlay" id="fl-3"></div>
-        <div class="scanline"></div>
-        <div class="scan-beam" style="animation-delay:2.5s"></div>
-        <div class="cam-foot"><span>OpticalFlow · 24FPS</span><span id="ts-3"></span></div>
-        <button class="clear-btn" id="clr-3" onclick="clearAlert(3)">✕ Clear</button>
-      </div>
-    </div>
-
-    <!-- CAM-04 -->
-    <div class="cam" id="cam-4">
-      <div class="cam-head">
-        <span class="cam-id">CAM-04 · Main Office</span>
-        <div class="cam-controls">
-          <span class="cam-st" id="st-4"><span class="st-dot"></span><span style="color:var(--green)">Normal</span></span>
-          <button class="trig-btn" onclick="manualTrigger(4)"> Trigger</button>
-        </div>
-      </div>
-      <div class="cam-screen">
-        <img src="http://localhost:8000/video_feed/4"
-             style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:1;"
-             onerror="this.style.display='none';document.getElementById('cam4-placeholder').style.display='block'">
-        <svg id="cam4-placeholder" class="cam-svg" style="display:none" viewBox="0 0 280 150" xmlns="http://www.w3.org/2000/svg">
-          <rect width="280" height="150" fill="#070a0f"/>
-          <text x="140" y="75" fill="#2a4060" font-size="10" font-family="monospace" text-anchor="middle">Waiting for stream...</text>
-          <text x="140" y="90" fill="#1a3050" font-size="7" font-family="monospace" text-anchor="middle">CAM-04 · MAIN-OFFICE</text>
-        </svg>
-        <div class="det-box" id="det-4"><div class="det-lbl" id="dlbl-4"></div></div>
-        <div class="cam-badge" id="bdg-4"></div>
-        <div class="cam-conf" id="conf-4"></div>
-        <div class="flash-overlay" id="fl-4"></div>
-        <div class="scanline"></div>
-        <div class="scan-beam" style="animation-delay:3.75s"></div>
-        <div class="cam-foot"><span>YOLOv8 · 24FPS</span><span id="ts-4"></span></div>
-        <button class="clear-btn" id="clr-4" onclick="clearAlert(4)">✕ Clear</button>
       </div>
     </div>
 
@@ -396,6 +334,53 @@ html,body{height:100%;font-family:var(--sans);background:var(--bg);color:var(--t
 </div>
 
 <script>
+// ── STREAM MANAGEMENT ────────────────────────────────────────────
+// Cams 1 and 3 have live MJPEG feeds; 2 and 4 are offline placeholders.
+// On error: show placeholder and schedule a reconnect in 3s.
+// On success: hide placeholder and show the live img.
+// This prevents the permanent "blank cam" bug when a stream hiccups.
+const ACTIVE_CAMS    = new Set([1, 2]);
+const STREAM_BASE    = 'http://localhost:8000/video_feed/';
+const STREAM_RETRY_MS = 3000;
+const _retryTimers   = {};
+
+function initStreams() {
+  [1, 2].forEach(id => {
+    const img = document.getElementById('stream-' + id);
+    const ph  = document.getElementById('cam' + id + '-placeholder');
+
+    if (!ACTIVE_CAMS.has(id)) {
+      // No detector feed for this cam — stay on placeholder permanently
+      if (img) img.style.display = 'none';
+      if (ph)  ph.style.display  = 'block';
+      return;
+    }
+
+    if (!img) return;
+
+    img.onload = () => {
+      img.style.display = 'block';
+      if (ph) ph.style.display = 'none';
+      clearTimeout(_retryTimers[id]);
+      delete _retryTimers[id];
+    };
+
+    img.onerror = () => {
+      img.style.display = 'none';
+      if (ph) ph.style.display = 'block';
+      // Don't stack retry timers
+      if (_retryTimers[id]) return;
+      _retryTimers[id] = setTimeout(() => {
+        delete _retryTimers[id];
+        // Cache-bust the URL so the browser treats it as a fresh request
+        img.src = STREAM_BASE + id + '?t=' + Date.now();
+      }, STREAM_RETRY_MS);
+    };
+
+    img.src = STREAM_BASE + id;
+  });
+}
+
 // ── CONFIG ──────────────────────────────────────────────────────
 const TYPES = {
   gathering: {
@@ -427,14 +412,12 @@ const TYPES = {
 
 const CAMS = {
   1:{ name:'CAM-01', loc:'Main Entrance', model:'YOLOv8' },
-  2:{ name:'CAM-02', loc:'Parking Lot', model:'YOLOv8' },
-  3:{ name:'CAM-03', loc:'Corridor B', model:'OpticalFlow' },
-  4:{ name:'CAM-04', loc:'Main Office', model:'YOLOv8' }
+  2:{ name:'CAM-02', loc:'Corridor B', model:'YOLOv8' },
 };
 
 // Detection box positions per cam [left%, top%, width%, height%]
 const DET_POS = {
-  1:[12,22,38,58], 2:[28,44,44,42], 3:[26,18,44,62], 4:[14,18,62,60]
+  1:[12,22,38,58], 2:[26,18,44,62],
 };
 
 // ── STATE ────────────────────────────────────────────────────────
@@ -446,6 +429,11 @@ let tabAll = false;
 // FIX: track last seen DB IDs so we don't re-fire the same alert
 let lastCrowdId = 0;
 let lastFallId  = 0;
+
+// Suppress new alerts if the last one of the same type fired within this window.
+// Guards against duplicate DB rows written in quick succession for the same event.
+const ALERT_DEDUP_MS = 3000;
+let lastAlertFiredAt = {}; // type → timestamp
 
 // FIX: track last displayed stat values so we only animate on real changes
 let lastAlertCount = -1;
@@ -464,13 +452,12 @@ window.addEventListener('DOMContentLoaded', () => {
   if (el) el.textContent = p(now.getHours())+':'+p(now.getMinutes())+' · System boot';
   lastCrowdId = parseInt(localStorage.getItem('vg_last_crowd_id') || '0', 10) || 0;
   lastFallId = parseInt(localStorage.getItem('vg_last_fall_id') || '0', 10) || 0;
-  try {
-    lastModalAt = JSON.parse(localStorage.getItem('vg_last_modal_at') || '{}');
-  } catch (e) {
-    lastModalAt = {};
-  }
+  // lastModalAt intentionally NOT restored from localStorage — stale cooldowns
+  // from previous sessions would silently block the modal from appearing.
+  lastModalAt = {};
   setInterval(updateClock, 1000); updateClock();
   setInterval(updateTimestamps, 1000); updateTimestamps();
+  initStreams();
   pollBackend();
   setInterval(pollBackend, POLL_INTERVAL_MS);
 });
@@ -478,10 +465,10 @@ window.addEventListener('DOMContentLoaded', () => {
 function p(n){ return n<10?'0'+n:''+n; }
 function ts(){ const n=new Date(); return p(n.getHours())+':'+p(n.getMinutes())+':'+p(n.getSeconds()); }
 function updateClock(){ const el=document.getElementById('clock'); if(el) el.textContent=ts(); }
-function updateTimestamps(){ for(let i=1;i<=4;i++){ const el=document.getElementById('ts-'+i); if(el) el.textContent=ts(); } }
+function updateTimestamps(){ [1,2].forEach(i=>{ const el=document.getElementById('ts-'+i); if(el) el.textContent=ts(); }); }
 
 function clearAllAlerts(){
-  [1,2,3,4].forEach(i => clearAlert(i));
+  [1,2].forEach(i => clearAlert(i));
 }
 
 async function clearAlertDb(){
@@ -543,8 +530,8 @@ function triggerAlert(cam, type){
 
   flashCam(cam, T.color);
 
-  // only show HTML overlay box for non-streaming cameras (2 and 4)
-  if(cam !== 1 && cam !== 3){
+  // only show HTML overlay box for non-streaming cameras
+  if(!ACTIVE_CAMS.has(cam)){
     const pos = DET_POS[cam];
     const box = document.getElementById('det-'+cam);
     const lbl = document.getElementById('dlbl-'+cam);
@@ -656,7 +643,6 @@ function showModal(cam, type, T, C, conf, timestamp){
   const now = Date.now();
   if(lastModalAt[type] && (now - lastModalAt[type]) < MODAL_COOLDOWN_MS) return;
   lastModalAt[type] = now;
-  localStorage.setItem('vg_last_modal_at', JSON.stringify(lastModalAt));
   currentModal={cam,type};
 
   const iconArea = document.getElementById('m-prev');
@@ -686,11 +672,17 @@ function showModal(cam, type, T, C, conf, timestamp){
     <div class="modal-row"><span class="mkey">Severity</span><span class="mval2" style="color:${T.color}">${T.sev}</span></div>
     <div class="modal-row"><span class="mkey">Recommended Action</span><span class="mval2">${T.action}</span></div>`;
 
+  _modalOpenedAt = Date.now();
   document.getElementById('backdrop').classList.add('open');
 }
 
+let _modalOpenedAt = 0;
+const MODAL_GRACE_MS = 1500; // backdrop click can't close modal for this long after it opens
+
 function closeModal(){ document.getElementById('backdrop').classList.remove('open'); currentModal=null; }
-function backdropClick(e){ if(e.target.id==='backdrop') closeModal(); }
+function backdropClick(e){
+  if(e.target.id==='backdrop' && Date.now() - _modalOpenedAt > MODAL_GRACE_MS) closeModal();
+}
 
 function acknowledgeAlert(){
   if(currentModal){
@@ -763,20 +755,34 @@ async function pollBackend(){
     lastAlertCount = updateStatCard('alert-count', stats.alert_count, lastAlertCount);
     lastFrameCount = updateStatCard('frame-count', stats.frame_count, lastFrameCount);
 
-    // ── CAM-01: Crowd / Gathering ────────────────────────────────
-    // Deduplicate by DB row ID — only fires once per unique alert row
+    // ── Crowd / Gathering ─────────────────────────────────────────
+    // cam_id comes from the DB row so we always alert the right camera.
     if(latest.is_alert && latest.id && latest.id !== lastCrowdId){
       lastCrowdId = latest.id;
       localStorage.setItem('vg_last_crowd_id', String(lastCrowdId));
-      if(!activeAlerts[1]) triggerAlert(1, 'gathering');
+      const now = Date.now();
+      if(!lastAlertFiredAt['gathering'] || now - lastAlertFiredAt['gathering'] > ALERT_DEDUP_MS){
+        lastAlertFiredAt['gathering'] = now;
+        const cam = latest.cam_id || 1;
+        clearAlert(cam);
+        delete lastModalAt['gathering'];
+        triggerAlert(cam, 'gathering');
+      }
     }
 
-    // ── CAM-03: Fall detection ────────────────────────────────────
-    // Deduplicate by DB row ID — only fires once per unique fall row
+    // ── Fall detection ────────────────────────────────────────────
+    // Same pattern — use cam_id from DB row.
     if(latestFall && latestFall.is_fall && latestFall.id && latestFall.id !== lastFallId){
       lastFallId = latestFall.id;
       localStorage.setItem('vg_last_fall_id', String(lastFallId));
-      if(!activeAlerts[3]) triggerAlert(3, 'fall');
+      const now = Date.now();
+      if(!lastAlertFiredAt['fall'] || now - lastAlertFiredAt['fall'] > ALERT_DEDUP_MS){
+        lastAlertFiredAt['fall'] = now;
+        const cam = latestFall.cam_id || 2;
+        clearAlert(cam);
+        delete lastModalAt['fall'];
+        triggerAlert(cam, 'fall');
+      }
     }
 
     if(!backendConnected){

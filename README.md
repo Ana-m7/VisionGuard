@@ -8,80 +8,65 @@ Built with **YOLOv8**, **OpenCV**, **FastAPI**, and vanilla JavaScript.
 
 ## Architecture
 
+Everything runs in a **single process**: the FastAPI server starts the detection engine's camera threads at startup, and they communicate through shared memory — no network hop between detector and API, and every frame is JPEG-encoded exactly once.
+
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│  detector/main_detect.py                                        │
-│                                                                 │
-│  CAM-01 (video1.mp4) ──► YOLOv8n + YOLOv8n-pose               │
-│  CAM-02 (video2.mp4) ──► YOLOv8n + YOLOv8n-pose               │
-│                                                                 │
-│  Both cameras run BOTH detectors every detection cycle.         │
-│  Crowd overlay is drawn first; fall boxes are composited on     │
-│  top. A single resized frame is pushed per cycle.               │
-│  Each camera runs in its own thread.                            │
-│  Every 3rd frame is run through the models.                     │
-│  Annotated frames are pushed to the backend at ~20 FPS.         │
-│  Detection events (alerts + clears) are written to SQLite       │
-│  with cam_id so the frontend knows which camera triggered.      │
-└───────────────┬────────────────────────┬────────────────────────┘
-                │ HTTP POST /push_frame  │ SQLite write
-                ▼                        ▼
 ┌─────────────────────────────────────────────────────────────────┐
 │  backend/app.py  (FastAPI, port 8000)                           │
 │                                                                 │
-│  On startup: drops and recreates DB tables (fresh schema)       │
-│  Stores latest frame per camera in memory                       │
-│  Serves MJPEG streams  → GET /video_feed/{cam_id}              │
-│  Serves alert state    → GET /latest, /fall/latest, /stats     │
-│  Maintenance           → POST /alerts/clear                     │
+│  lifespan startup ──► init_db() ──► detector/engine.py          │
+│                                                                 │
+│   ┌──────────────────────────────────────────────┐              │
+│   │  detector/engine.py — one thread per camera  │              │
+│   │                                              │              │
+│   │  CAM-01 (video1.mp4) ──► YOLOv8n-pose        │              │
+│   │  CAM-02 (video2.mp4) ──► YOLOv8n-pose        │              │
+│   │                                              │              │
+│   │  ONE pose model per camera serves BOTH       │              │
+│   │  detectors: person boxes → crowd density,    │              │
+│   │  box geometry → fall detection.              │              │
+│   │  Inference on every 3rd frame.               │              │
+│   │  Annotated frame → JPEG (encoded once) ──►   │              │
+│   │  in-memory FrameStore.                       │              │
+│   │  State transitions → SQLite (with cam_id).   │              │
+│   └──────────────────────────────────────────────┘              │
+│                                                                 │
+│  FrameStore bytes  → GET /video_feed/{cam_id}  (MJPEG)          │
+│  LiveStats + DB    → GET /stats, /latest, /fall/latest,         │
+│                      GET /alerts/recent                         │
+│  Maintenance       → POST /alerts/clear                         │
 └───────────────────────────────┬─────────────────────────────────┘
                                 │ HTTP (polling + MJPEG)
                                 ▼
 ┌─────────────────────────────────────────────────────────────────┐
 │  frontend/VG_FE_Basic.html  (open in browser)                   │
 │                                                                 │
-│  Live MJPEG feeds for CAM-01 and CAM-02 (2/2 active)           │
+│  Live MJPEG feeds for CAM-01 and CAM-02                         │
 │  Polls /latest + /fall/latest every 3s for new alert rows       │
+│  Rebuilds event log from /alerts/recent on page load            │
 │  Deduplicates by DB row ID — never fires the same alert twice   │
-│  3s dedup window suppresses back-to-back rows for same event    │
 │  Uses cam_id from DB row to flash/badge the correct camera      │
 │  Alert triggers: flash overlay, audio beep, modal popup         │
-│  Event log, stat cards, dark/light theme                        │
-│  Sidebar is sticky and scrolls independently — camera height    │
-│  is fixed and never grows with the event log                    │
+│  Real detection data in alerts (person count, zone density,     │
+│  fall aspect ratio) — live stat cards, dark/light theme         │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
+### Design decision: one model, not two
+
+Earlier versions ran two models per frame — YOLOv8n for person detection and YOLOv8n-pose for falls. Benchmarking both on the project footage showed the pose model's person counts agree with the detection model's on 92–100% of frames (within ±1 person), while running one model instead of two **cuts inference cost roughly in half** (~107 ms vs ~207 ms per frame on CPU). The pose model's boxes now feed crowd counting and its geometry feeds fall detection.
+
+### Design decision: single process, zero-copy frame path
+
+Earlier versions ran the detector as a separate process that JPEG-encoded frames at quality 40, POSTed them to the backend over localhost HTTP, decoded them, then re-encoded at quality 75 for MJPEG streaming — four codec passes and a network hop per frame. Now camera threads encode each annotated frame **once** and place the bytes in a shared in-memory `FrameStore`; the MJPEG endpoint serves those bytes directly. Higher quality, lower latency, one command to run.
+
 ### Alert flow
 
-1. Detector runs both crowd and fall inference on every camera every 3rd frame
-2. On a state transition (clear → alert), a row is written to SQLite with `cam_id`
+1. Camera thread runs inference every 3rd frame
+2. On a state transition (clear → alert), a row is written to SQLite with `cam_id` and real detection data (person count + zone density, or fall aspect ratio)
 3. Frontend polls `/latest` and `/fall/latest` every 3 seconds
-4. If the returned row ID is new **and** more than 3 seconds have passed since the last alert of that type, `triggerAlert(cam_id, type)` fires
-5. The correct camera's border flashes, badge appears, audio beep plays, modal opens after 700 ms
-6. Row ID is saved to `localStorage` so reloading the page doesn't re-fire the same alert
-
-### Detection compositing
-
-For each detection frame, the pipeline is:
-
-1. **Crowd model** runs on the original clean frame → draws 3×4 grid + person bounding boxes → returns annotated frame at original resolution (no push yet)
-2. **Fall model** runs inference on the same original frame (clean, for accuracy) → draws fall bounding boxes on top of the crowd-annotated frame
-3. The combined frame is resized to 480×270 and pushed to the backend once
-
-This means both overlays are always visible simultaneously on every camera feed.
-
-### Video streaming
-
-The detector pushes annotated JPEG frames to `POST /push_frame/{cam_id}` at ~20 FPS. The backend holds the latest frame per camera in memory and serves it as a continuous MJPEG multipart stream at `GET /video_feed/{cam_id}`. The browser renders this inside an `<img>` tag — no WebSocket or WebRTC needed.
-
-If the stream drops (e.g. backend restarts), the frontend shows a placeholder and automatically retries the connection every 3 seconds.
-
-### DB reset on startup
-
-Every time the backend starts, it **drops and recreates** both tables. This guarantees:
-- A clean slate — no stale alerts from a previous session confuse the frontend's ID-based deduplication
-- Schema changes (new columns, etc.) always take effect without a manual migration
+4. If the returned row ID is new **and** outside the 3-second dedup window, the alert fires: camera border flashes, badge appears, audio beep plays, modal opens with the real detection data
+5. Row IDs persist to `localStorage` so a page reload doesn't re-fire old alerts; the event log is rebuilt from `/alerts/recent`
 
 ---
 
@@ -91,20 +76,21 @@ Every time the backend starts, it **drops and recreates** both tables. This guar
 VisionGuard/
 ├── .vscode/
 │   └── settings.json       VS Code Live Server config (excludes .db + evidence_frames from watch)
+├── config.py               ALL tunables — cameras, thresholds, paths, ports
 ├── backend/
-│   └── app.py              FastAPI server — frame store, MJPEG streaming, REST API
+│   └── app.py              FastAPI server — starts the engine, serves MJPEG + REST API
 ├── detector/
-│   └── main_detect.py      Detection engine — YOLOv8 inference, DB writes, frame push
+│   └── engine.py           Detection engine — YOLOv8n-pose inference, DB writes, FrameStore
 ├── frontend/
 │   └── VG_FE_Basic.html    Browser dashboard — single HTML file, no build step
 ├── models/
-│   ├── yolov8n.pt          YOLOv8 nano detection model (~6 MB)
-│   └── yolov8n-pose.pt     YOLOv8 nano pose estimation model (~6 MB)
+│   ├── yolov8n.pt          YOLOv8 nano detection model (kept for benchmarking)
+│   └── yolov8n-pose.pt     YOLOv8 nano pose model — the one the engine uses
 ├── videos/
 │   ├── video1.mp4          Source footage for CAM-01
 │   └── video2.mp4          Source footage for CAM-02
 ├── evidence_frames/        Auto-created — saved JPEG snapshots of alert moments
-├── crowd_events.db         Auto-created — SQLite database (reset on every backend start)
+├── crowd_events.db         Auto-created — SQLite database (reset on every start)
 └── requirements.txt
 ```
 
@@ -112,126 +98,67 @@ VisionGuard/
 
 ## Detection
 
-### Crowd detection (both cameras)
+### Crowd detection
 
-- YOLOv8n detects all persons (class 0) in the frame
-- Frame is divided into a 3×4 grid
-- Each person is assigned to the grid cell containing their bounding box centre
+- YOLOv8n-pose detects all persons in the frame
+- Frame is divided into a 3×4 grid; each person is assigned to the cell containing their bounding-box centre
 - If any cell contains **≥ 3 persons**, an alert is triggered
-- Alert fires only on the **transition** from clear → alert (state-change detection)
-- When the crowd clears, state resets — the next crowd event always triggers a fresh alert
-- The annotated frame shows the grid overlay with per-cell person counts; high-density cells are highlighted red
+- The annotated frame shows the grid with per-cell counts; high-density cells are highlighted red
 
-### Fall detection (both cameras)
+### Fall detection
 
-- YOLOv8n-pose detects person bounding boxes
-- If a bounding box has **width/height ratio > 1.3** the person is considered horizontal (fallen)
-- Alert fires only on the clear → fall transition
-- When the fall clears, state resets
-- Annotated frame shows green boxes for upright persons, red boxes with ratio label for fallen
+- If a person's bounding box has **width/height ratio > 1.3** they are considered horizontal (fallen)
+- The triggering aspect ratio is stored with the event and shown in the alert
+- Pose keypoints are drawn on the feed; keypoint-based fall classification (torso angle) is the next planned upgrade
 
-### State-transition detection
+### State-transition alerts
 
-No cooldown timers are used. Instead, the detector tracks the previous detection state per camera:
-
-- `last_crowd_state` starts as `None` (neutral) and becomes `True`/`False` after the first detection
-- `last_fall_state` starts as `False`
-- A DB row is written **only when state changes**: clear→alert writes `is_alert=1`, alert→clear writes `is_alert=0`
-- On video loop restart both states reset to their initial values, so the first detection on the new loop always writes a fresh row
-
-### Frontend deduplication
-
-The frontend uses two layers of deduplication:
-
-1. **Row ID check** — `latest.id !== lastCrowdId` / `latestFall.id !== lastFallId`. Each unique DB row fires at most one alert. IDs are persisted to `localStorage` so a page reload doesn't re-fire old alerts.
-2. **3-second window** — if a new row arrives within 3 seconds of the previous alert of the same type, it is suppressed. This catches rapid back-to-back rows that represent the same physical event.
+No cooldown timers. Each camera thread tracks its previous detection state, and a DB row is written **only when state changes**: clear→alert writes an alert row (plus an evidence frame), alert→clear writes a clear row. Crowd state starts neutral (`None`) so the first detection after startup or a video loop always writes a fresh row.
 
 ### Evidence frames
 
-Saved to `evidence_frames/` automatically:
-- `crowd_cam{id}_{frame_num}.jpg` — frame at the moment a crowd alert triggers
-- `fall_cam{id}_{timestamp}.jpg` — frame at the moment a fall is detected
+Saved to `evidence_frames/` at the moment an alert triggers:
+`crowd_cam{id}_{timestamp}.jpg` · `fall_cam{id}_{timestamp}.jpg`
 
 ---
 
 ## Database
 
-SQLite file at `crowd_events.db`. Dropped and recreated fresh every time the backend starts.
+SQLite file at `crowd_events.db`, dropped and recreated on every start (clean slate — fresh IDs keep the frontend's dedup logic simple; a persistent history/analytics layer is planned).
 
-**`crowd_events`**
+**`crowd_events`** — `id, cam_id, timestamp, person_count, max_zone_density, is_alert, frame_path`
 
-| Column | Type | Description |
-|--------|------|-------------|
-| id | INTEGER PK | Auto-increment |
-| cam_id | INTEGER | Camera that triggered the alert |
-| timestamp | TEXT | `YYYY-MM-DD HH:MM:SS` |
-| person_count | INTEGER | Total persons in frame |
-| max_zone_density | INTEGER | Highest per-cell count |
-| is_alert | INTEGER | 1 = alert, 0 = cleared |
-| frame_path | TEXT | Path to evidence frame |
-
-**`fall_events`**
-
-| Column | Type | Description |
-|--------|------|-------------|
-| id | INTEGER PK | Auto-increment |
-| cam_id | INTEGER | Camera that triggered the fall |
-| timestamp | TEXT | `YYYY-MM-DD HH:MM:SS` |
-| is_fall | INTEGER | 1 = fall detected, 0 = cleared |
+**`fall_events`** — `id, cam_id, timestamp, is_fall, ratio`
 
 ---
 
-## Setup
+## Setup & Running
 
 ### Prerequisites
 
 - Python 3.9+
-- pip
 
-### Install dependencies
+### Install
 
 ```bash
 pip install -r requirements.txt
 ```
 
-`requirements.txt` installs: `fastapi`, `uvicorn`, `ultralytics` (YOLOv8), `opencv-python`, `numpy`, `torch`, `torchvision`, `python-multipart`
+### Run
 
-### First-time model download
-
-The model files in `models/` are committed to the repo. If they are missing for any reason, YOLOv8 will auto-download them from Ultralytics on first run.
-
----
-
-## Running
-
-Three separate terminal sessions are needed. Run all commands from the `VisionGuard/` root.
-
-**Terminal 1 — Start the backend**
+**Terminal — start everything (backend + detection engine):**
 
 ```bash
 python backend/app.py
 ```
 
-The backend drops and recreates the SQLite tables on every startup, so there is no need to manually clear the DB between runs.
+**Browser — open the dashboard:**
 
-> **Why not `uvicorn ... --reload`?**
-> Uvicorn's StatReload watches the entire project directory. Every time the detector writes an alert to `crowd_events.db` or saves an evidence frame, StatReload detects the file change and restarts the server — killing all active MJPEG streams. Running via `python backend/app.py` scopes reload to `*.py` files only.
+Open `frontend/VG_FE_Basic.html` in your browser. If using **VS Code Live Server** (Go Live), the included `.vscode/settings.json` makes it ignore `*.db`, `evidence_frames/`, and `__pycache__/` so DB writes don't trigger page refreshes.
 
-**Terminal 2 — Start the detector**
+That's it — one command, one browser tab.
 
-```bash
-python detector/main_detect.py
-```
-
-All paths inside the detector are resolved relative to the script's own location, so this works from any working directory.
-
-**Terminal 3 — Open the dashboard**
-
-Open `frontend/VG_FE_Basic.html` in your browser. If using **VS Code Live Server** (Go Live), the included `.vscode/settings.json` configures it to ignore `*.db`, `evidence_frames/`, and `__pycache__/` — without this, every DB write from the detector triggers a browser refresh and closes any open alert modals.
-
-### Startup order
-
-Start the **backend first**, then the **detector**. The detector pushes frames to the backend immediately on launch, so the backend must be ready to receive them. The frontend can be opened at any time.
+> Auto-reload is intentionally disabled: the detection threads live inside the server process, and a reload supervisor would restart them on every file change.
 
 ---
 
@@ -241,72 +168,46 @@ All endpoints are served at `http://127.0.0.1:8000`.
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| `GET` | `/video_feed/{cam_id}` | MJPEG stream for camera `cam_id`. Returns 404 if no frames have been received for that cam yet. |
-| `POST` | `/push_frame/{cam_id}` | Receive a JPEG frame from the detector (multipart form, field name `frame`). |
-| `GET` | `/stats` | Combined alert count (crowd + fall, last 60s), crowd event row count, total person count. |
-| `GET` | `/latest` | Most recent crowd alert row within the last 60 seconds. Includes `cam_id`. |
-| `GET` | `/fall/latest` | Most recent fall alert row within the last 60 seconds. Includes `cam_id`. |
-| `GET` | `/alerts/recent` | Last 50 crowd alert rows (all time). |
+| `GET` | `/video_feed/{cam_id}` | MJPEG stream for camera `cam_id`. 404 for unknown cameras. |
+| `GET` | `/stats` | Alert count (last 60s), frames analyzed, persons currently in view, cameras live/total. |
+| `GET` | `/latest` | Most recent crowd alert row within the last 60 seconds. |
+| `GET` | `/fall/latest` | Most recent fall alert row within the last 60 seconds (includes aspect ratio). |
+| `GET` | `/alerts/recent?limit=N` | Recent alerts from both detectors, newest first (default 50). |
 | `POST` | `/alerts/clear` | Delete all rows from both tables and reset auto-increment counters. |
 
 ---
 
 ## Configuration
 
-Key constants are defined at the top of each file.
-
-**`detector/main_detect.py`**
+Everything lives in **`config.py`**:
 
 | Constant | Default | Description |
 |----------|---------|-------------|
+| `VIDEO_SOURCES` | 2 video files | cam_id → source. Int = webcam index, path = video file, `rtsp://` URL = IP camera |
+| `CAMERA_LABELS` | Entrance/Corridor | Display names |
 | `CROWD_THRESHOLD` | `3` | Persons per grid cell to trigger a crowd alert |
 | `GRID_ROWS` / `GRID_COLS` | `3` / `4` | Density grid dimensions |
-| `ASPECT_RATIO_FALL` | `1.3` | Bounding box w/h ratio above which a person is considered fallen |
-| `DETECT_EVERY` | `3` | Run inference on every Nth frame (1 = every frame) |
-| `PUSH_INTERVAL` | `0.05s` | How often the push-worker thread sends the latest frame to the backend |
-| `FRAME_SIZE` | `480×270` | Resolution frames are resized to before pushing |
-| `API_BASE` | `http://127.0.0.1:8000` | Backend URL |
-
-**`backend/app.py`**
-
-| Constant | Default | Description |
-|----------|---------|-------------|
-| `RECENT_WINDOW_SECONDS` | `60` | How far back `/stats`, `/latest`, `/fall/latest` look |
+| `ASPECT_RATIO_FALL` | `1.3` | Box w/h ratio above which a person is considered fallen |
+| `DETECT_EVERY` | `3` | Run inference on every Nth frame |
+| `FRAME_SIZE` | `480×270` | Streamed frame resolution |
+| `JPEG_QUALITY` | `75` | Encoding quality for streamed frames |
 | `STREAM_INTERVAL` | `0.05s` | Delay between MJPEG frames sent to the browser |
+| `RECENT_WINDOW_SECONDS` | `60` | How far back `/stats` and `/latest` look |
+| `HOST` / `PORT` | `127.0.0.1:8000` | API bind address |
 
-**`frontend/VG_FE_Basic.html`**
+Frontend constants (`POLL_INTERVAL_MS`, `ALERT_DEDUP_MS`, `MODAL_COOLDOWN_MS`, `STREAM_RETRY_MS`, `ACTIVE_CAMS`) are at the top of the `<script>` block in `VG_FE_Basic.html`.
 
-| Constant | Default | Description |
-|----------|---------|-------------|
-| `POLL_INTERVAL_MS` | `3000` | How often to poll the backend for new alerts |
-| `ALERT_DEDUP_MS` | `3000` | Minimum gap between alerts of the same type (suppresses rapid duplicate rows) |
-| `MODAL_COOLDOWN_MS` | `30000` | Minimum gap between modal popups for the same alert type (session-only) |
-| `STREAM_RETRY_MS` | `3000` | How long to wait before retrying a dropped MJPEG stream |
-| `ACTIVE_CAMS` | `{1, 2}` | Which camera IDs have live feeds |
+### Adding a camera
 
----
-
-## Cameras
-
-Both cameras run both crowd density detection and fall detection. The dashboard shows them side by side at full width.
-
-| ID | Label | Location | Feed | Detection |
-|----|-------|----------|------|-----------|
-| CAM-01 | Main Entrance | Main entrance | Live MJPEG | Crowd density + Fall (YOLOv8n + YOLOv8n-pose) |
-| CAM-02 | Corridor B | Corridor B | Live MJPEG | Crowd density + Fall (YOLOv8n + YOLOv8n-pose) |
-
-Adding a new camera requires:
-1. Adding it to `VIDEO_SOURCES` in `detector/main_detect.py`
-2. Adding its `cam_id` to `ACTIVE_CAMS` in the frontend
-3. Adding the HTML camera block to the camera grid in `VG_FE_Basic.html`
+1. Add it to `VIDEO_SOURCES` (and `CAMERA_LABELS`) in `config.py`
+2. Add its `cam_id` to `ACTIVE_CAMS` and `CAMS` in the frontend
+3. Copy a camera block in the dashboard HTML
 
 ---
 
 ## Known Limitations
 
-- **Video sources are local files** — to use live cameras, replace the paths in `VIDEO_SOURCES` with RTSP stream URLs (`cv2.VideoCapture("rtsp://...")`).
-- **Fall detection uses aspect ratio only** — a person lying down is detected, but so is a person crouching sideways or a wide object. Pose keypoint validation would improve accuracy.
+- **Fall detection uses box aspect ratio only** — pose keypoints are drawn but not yet used for classification. Keypoint-based fall logic (torso angle, head/hip height) is the next planned upgrade.
 - **No authentication** — the API accepts requests from any origin. Do not expose port 8000 to a public network.
-- **DB is wiped on every backend start** — this is intentional (clean slate, fresh IDs). If you need persistence across restarts, remove the `DROP TABLE` statements from the startup handler.
-- **Single backend process** — all camera threads share one FastAPI process. For more than ~4 cameras, consider running separate detector and backend instances.
-- **`on_event` deprecation** — FastAPI has deprecated `@app.on_event("startup")` in favour of lifespan handlers. It works correctly but will print a deprecation warning on startup.
+- **DB is wiped on every start** — intentional for now (clean slate, fresh IDs). A persistent history + analytics layer is planned.
+- **Polling, not push** — the frontend polls every 3s; WebSocket alerts are planned.

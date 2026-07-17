@@ -1,111 +1,79 @@
-from fastapi import FastAPI, UploadFile, File, HTTPException
+"""VisionGuard API server.
+
+Single process: the FastAPI lifespan handler initialises the database and
+starts the detection engine's camera threads. Camera threads place encoded
+JPEG frames into a shared FrameStore; the MJPEG endpoint serves those bytes
+directly — frames are encoded exactly once in the whole pipeline.
+"""
+import os
+import sys
+import sqlite3
+import time
+from contextlib import asynccontextmanager
+from datetime import datetime, timedelta
+
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
-import sqlite3
-import os
-import cv2
-import numpy as np
-import threading
-import time
 import uvicorn
 
-app = FastAPI()
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+import config
+from detector.engine import FrameStore, LiveStats, init_db, start_engine
+
+frame_store = FrameStore()
+live_stats = LiveStats()
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    init_db()
+    start_engine(frame_store, live_stats)
+    yield
+
+
+app = FastAPI(title="VisionGuard", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["*"],  # local demo only — do not expose publicly
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-DB_PATH = os.path.join(os.path.dirname(__file__), "../crowd_events.db")
-RECENT_WINDOW_SECONDS = 60
-STREAM_INTERVAL = 0.05  # seconds (~20 FPS)
-
-
-@app.on_event("startup")
-def clear_db_on_startup():
-    conn = sqlite3.connect(DB_PATH)
-    cur = conn.cursor()
-    # Drop and recreate so schema changes (e.g. new columns) always take effect.
-    cur.execute("DROP TABLE IF EXISTS crowd_events")
-    cur.execute("DROP TABLE IF EXISTS fall_events")
-    cur.execute("""
-        CREATE TABLE crowd_events (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            cam_id INTEGER,
-            timestamp TEXT,
-            person_count INTEGER,
-            max_zone_density INTEGER,
-            is_alert INTEGER,
-            frame_path TEXT
-        )
-    """)
-    cur.execute("""
-        CREATE TABLE fall_events (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            cam_id INTEGER,
-            timestamp TEXT,
-            is_fall INTEGER
-        )
-    """)
-    conn.commit()
-    conn.close()
-    print("DB reset on startup.")
-
 
 def get_db():
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(config.DB_PATH)
     conn.row_factory = sqlite3.Row
     return conn
 
 
+def recent_cutoff():
+    """Timestamp string N seconds ago, matching the detector's format."""
+    cutoff = datetime.now() - timedelta(seconds=config.RECENT_WINDOW_SECONDS)
+    return cutoff.strftime("%Y-%m-%d %H:%M:%S")
+
+
 # ================================================================
-# FRAME STORE — receives frames from main_detect.py
+# VIDEO STREAMING
 # ================================================================
-latest_frames = {}
-frame_lock = threading.Lock()
-
-
-@app.post("/push_frame/{cam_id}")
-async def push_frame(cam_id: int, frame: UploadFile = File(...)):
-    data = await frame.read()
-    arr = np.frombuffer(data, np.uint8)
-    img = cv2.imdecode(arr, cv2.IMREAD_COLOR)
-    if img is not None:
-        with frame_lock:
-            latest_frames[cam_id] = img
-    return {"ok": True}
-
-
 def generate_stream(cam_id):
     while True:
-        with frame_lock:
-            frame = latest_frames.get(cam_id)
-        if frame is None:
-            time.sleep(0.05)
-            continue
-        _, buffer = cv2.imencode(
-            '.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 75]
-        )
-        yield (
-            b'--frame\r\n'
-            b'Content-Type: image/jpeg\r\n\r\n'
-            + buffer.tobytes()
-            + b'\r\n'
-        )
-        time.sleep(STREAM_INTERVAL)
+        jpeg = frame_store.get(cam_id)
+        if jpeg is not None:
+            yield (b"--frame\r\n"
+                   b"Content-Type: image/jpeg\r\n\r\n" + jpeg + b"\r\n")
+        time.sleep(config.STREAM_INTERVAL)
 
 
 @app.get("/video_feed/{cam_id}")
 def video_feed(cam_id: int):
-    with frame_lock:
-        has_feed = cam_id in latest_frames
-    if not has_feed:
-        raise HTTPException(status_code=404, detail="No stream for this camera")
+    if cam_id not in config.VIDEO_SOURCES:
+        raise HTTPException(status_code=404, detail="Unknown camera")
     return StreamingResponse(
         generate_stream(cam_id),
-        media_type="multipart/x-mixed-replace; boundary=frame"
+        media_type="multipart/x-mixed-replace; boundary=frame",
     )
 
 
@@ -116,148 +84,105 @@ def video_feed(cam_id: int):
 def get_stats():
     conn = get_db()
     cur = conn.cursor()
-
-    # FIX: Use a consistent recent window for BOTH detectors
-    # so the count reflects "active/recent" alerts, not all-time
-    WINDOW = f"datetime('now', 'localtime', '-{RECENT_WINDOW_SECONDS} seconds')"
-
-    cur.execute(f"""
-        SELECT COUNT(*)
-        FROM crowd_events
-        WHERE is_alert = 1
-        AND timestamp >= {WINDOW}
-    """)
-    alert_count = cur.fetchone()[0]
-
-    # FIX: fall_events also filtered to same window — was counting ALL TIME before
+    cutoff = recent_cutoff()
     cur.execute(
-        "SELECT name FROM sqlite_master WHERE type='table' AND name='fall_events'"
-    )
-    if cur.fetchone():
-        cur.execute(f"""
-            SELECT COUNT(*) FROM fall_events
-            WHERE is_fall = 1
-            AND timestamp >= {WINDOW}
-        """)
-        alert_count += cur.fetchone()[0]
-
-    cur.execute("SELECT COUNT(*) FROM crowd_events")
-    frame_count = cur.fetchone()[0]
-
-    cur.execute("SELECT COALESCE(SUM(person_count), 0) FROM crowd_events")
-    person_count = cur.fetchone()[0]
-
+        "SELECT COUNT(*) FROM crowd_events WHERE is_alert = 1 AND timestamp >= ?",
+        (cutoff,))
+    alert_count = cur.fetchone()[0]
+    cur.execute(
+        "SELECT COUNT(*) FROM fall_events WHERE is_fall = 1 AND timestamp >= ?",
+        (cutoff,))
+    alert_count += cur.fetchone()[0]
     conn.close()
+
+    live = live_stats.snapshot()
     return {
         "alert_count": alert_count,
-        "frame_count": frame_count,
-        "person_count": person_count
+        "frames_processed": live["frames_processed"],
+        "persons_now": live["persons_now"],
+        "cameras_live": len(live["cameras"]),
+        "cameras_total": len(config.VIDEO_SOURCES),
     }
 
 
 # ================================================================
-# CROWD ENDPOINTS
+# ALERTS
 # ================================================================
 @app.get("/latest")
-def get_latest():
+def get_latest_crowd():
     conn = get_db()
     cur = conn.cursor()
-    window = f"datetime('now', 'localtime', '-{RECENT_WINDOW_SECONDS} seconds')"
-    cur.execute(f"""
-        SELECT id, cam_id, timestamp, person_count, max_zone_density, is_alert
-        FROM crowd_events
-        WHERE is_alert = 1
-        AND timestamp >= {window}
-        ORDER BY id DESC LIMIT 1
-    """)
+    cur.execute(
+        """SELECT id, cam_id, timestamp, person_count, max_zone_density, is_alert
+           FROM crowd_events
+           WHERE is_alert = 1 AND timestamp >= ?
+           ORDER BY id DESC LIMIT 1""",
+        (recent_cutoff(),))
     row = cur.fetchone()
     conn.close()
     if not row:
-        return {
-            "id": 0, "cam_id": None, "timestamp": None,
-            "person_count": 0, "zone_density": 0, "is_alert": 0
-        }
-    return {
-        "id": row[0], "cam_id": row[1], "timestamp": row[2],
-        "person_count": row[3], "zone_density": row[4], "is_alert": row[5]
-    }
+        return {"id": 0, "cam_id": None, "timestamp": None,
+                "person_count": 0, "zone_density": 0, "is_alert": 0}
+    return {"id": row["id"], "cam_id": row["cam_id"], "timestamp": row["timestamp"],
+            "person_count": row["person_count"], "zone_density": row["max_zone_density"],
+            "is_alert": row["is_alert"]}
 
 
-@app.get("/alerts/recent")
-def get_recent_alerts():
-    conn = get_db()
-    cur = conn.cursor()
-    cur.execute("""
-        SELECT id, timestamp, person_count, max_zone_density, is_alert
-        FROM crowd_events
-        WHERE is_alert = 1
-        ORDER BY id DESC LIMIT 50
-    """)
-    rows = cur.fetchall()
-    conn.close()
-    return [
-        {
-            "id": r[0], "timestamp": r[1],
-            "person_count": r[2], "zone_density": r[3], "is_alert": r[4]
-        }
-        for r in rows
-    ]
-
-
-# ================================================================
-# FALL ENDPOINT
-# ================================================================
 @app.get("/fall/latest")
 def get_latest_fall():
     conn = get_db()
     cur = conn.cursor()
     cur.execute(
-        "SELECT name FROM sqlite_master WHERE type='table' AND name='fall_events'"
-    )
-    if not cur.fetchone():
-        conn.close()
-        return {"id": 0, "is_fall": False, "timestamp": None}
-    window = f"datetime('now', 'localtime', '-{RECENT_WINDOW_SECONDS} seconds')"
-    cur.execute(f"""
-        SELECT id, cam_id, timestamp, is_fall
-        FROM fall_events
-        WHERE is_fall = 1
-        AND timestamp >= {window}
-        ORDER BY id DESC LIMIT 1
-    """)
+        """SELECT id, cam_id, timestamp, is_fall, ratio
+           FROM fall_events
+           WHERE is_fall = 1 AND timestamp >= ?
+           ORDER BY id DESC LIMIT 1""",
+        (recent_cutoff(),))
     row = cur.fetchone()
     conn.close()
     if not row:
-        return {"id": 0, "cam_id": None, "is_fall": False, "timestamp": None}
-    return {"id": row[0], "cam_id": row[1], "is_fall": bool(row[3]), "timestamp": row[2]}
+        return {"id": 0, "cam_id": None, "is_fall": False,
+                "timestamp": None, "ratio": None}
+    return {"id": row["id"], "cam_id": row["cam_id"], "is_fall": bool(row["is_fall"]),
+            "timestamp": row["timestamp"], "ratio": row["ratio"]}
 
 
-# ================================================================
-# MAINTENANCE
-# ================================================================
+@app.get("/alerts/recent")
+def get_recent_alerts(limit: int = 50):
+    """Recent alerts from both detectors, newest first — used by the
+    dashboard to rebuild its event log after a page load."""
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute(
+        """SELECT * FROM (
+               SELECT 'gathering' AS type, id, cam_id, timestamp,
+                      person_count, max_zone_density AS zone_density, NULL AS ratio
+               FROM crowd_events WHERE is_alert = 1
+               UNION ALL
+               SELECT 'fall' AS type, id, cam_id, timestamp,
+                      NULL AS person_count, NULL AS zone_density, ratio
+               FROM fall_events WHERE is_fall = 1
+           )
+           ORDER BY timestamp DESC LIMIT ?""",
+        (limit,))
+    rows = [dict(r) for r in cur.fetchall()]
+    conn.close()
+    return rows
+
+
 @app.post("/alerts/clear")
 def clear_alerts():
     conn = get_db()
     cur = conn.cursor()
     cur.execute("DELETE FROM crowd_events")
-    cur.execute(
-        "SELECT name FROM sqlite_master WHERE type='table' AND name='fall_events'"
-    )
-    if cur.fetchone():
-        cur.execute("DELETE FROM fall_events")
+    cur.execute("DELETE FROM fall_events")
     cur.execute("DELETE FROM sqlite_sequence WHERE name IN ('crowd_events', 'fall_events')")
     conn.commit()
     conn.close()
     return {"ok": True}
 
+
 if __name__ == "__main__":
-    # reload=True with reload_includes scoped to .py only — prevents uvicorn's
-    # StatReload from restarting the server when crowd_events.db or evidence
-    # frames are written (which would kill all active MJPEG streams).
-    uvicorn.run(
-        "app:app",
-        host="127.0.0.1",
-        port=8000,
-        reload=True,
-        reload_includes=["*.py"],
-    )
+    # No auto-reload: the detector threads live in this process, and a
+    # reload supervisor would restart them on every file change.
+    uvicorn.run(app, host=config.HOST, port=config.PORT)

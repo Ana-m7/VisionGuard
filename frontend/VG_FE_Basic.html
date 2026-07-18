@@ -15,6 +15,8 @@
   --cam-bg:#070a0f;
   --mono:'IBM Plex Mono',monospace;
   --sans:'Inter',sans-serif;
+  /* chart series (contrast-checked per theme) */
+  --c-cam1:#388bfd; --c-cam2:#db6d28; --c-cam3:#8957e5;
 }
 [data-theme="light"] {
   --bg:#f0f2f5; --surf:#ffffff; --surf2:#e8eaed; --border:#d0d7de;
@@ -23,6 +25,7 @@
   --bg-green:rgba(26,127,55,0.1); --bg-red:rgba(207,34,46,0.1);
   --bg-amber:rgba(154,103,0,0.1); --bg-orange:rgba(188,76,0,0.1);
   --cam-bg:#070a0f;
+  --c-cam1:#0969da; --c-cam2:#bc4c00; --c-cam3:#8250df;
 }
 *{box-sizing:border-box;margin:0;padding:0}
 html,body{height:100%;font-family:var(--sans);background:var(--bg);color:var(--text);font-size:13px;line-height:1.5}
@@ -40,8 +43,8 @@ html,body{height:100%;font-family:var(--sans);background:var(--bg);color:var(--t
 .theme-btn:hover{color:var(--text);border-color:var(--blue)}
 
 /* ── INFO BAR ── */
-.info-bar{display:flex;align-items:center;justify-content:space-between;padding:6px 16px;background:var(--surf);border-bottom:0.5px solid var(--border);font-size:10px;color:var(--text3);font-family:var(--mono)}
-.info-bar span{display:flex;align-items:center;gap:14px}
+.info-bar{display:flex;align-items:center;justify-content:space-between;padding:7px 16px;background:var(--surf);border-bottom:0.5px solid var(--border);font-size:10px;color:var(--text3);font-family:var(--mono)}
+.info-bar > span{display:flex;align-items:center;gap:10px}
 .leg{display:flex;align-items:center;gap:5px}
 .swatch{width:9px;height:9px;border-radius:2px;flex-shrink:0}
 
@@ -53,6 +56,7 @@ html,body{height:100%;font-family:var(--sans);background:var(--bg);color:var(--t
    jump/overflow the card box during the scale animation every 2s poll */
 .stat-num{font-size:26px;font-weight:600;font-family:var(--mono);line-height:1;display:inline-block}
 .stat-num.g{color:var(--green)}.stat-num.r{color:var(--red)}.stat-num.a{color:var(--amber)}.stat-num.b{color:var(--blue)}
+.stat-sub{font-family:var(--mono);font-size:9px;color:var(--text3);margin-top:4px}
 @keyframes numPop{0%{transform:scale(1)}40%{transform:scale(1.25)}100%{transform:scale(1)}}
 .stat-num.popping{animation:numPop .35s ease}
 
@@ -73,9 +77,6 @@ html,body{height:100%;font-family:var(--sans);background:var(--bg);color:var(--t
 /* ── CAM SCREEN ── */
 .cam-screen{position:relative;height:310px;background:var(--cam-bg);overflow:hidden}
 .cam-svg{position:absolute;inset:0;width:100%;height:100%}
-.scanline{position:absolute;inset:0;background:repeating-linear-gradient(transparent 0px,transparent 3px,rgba(0,0,0,.07) 3px,rgba(0,0,0,.07) 4px);pointer-events:none;z-index:3}
-.scan-beam{position:absolute;top:0;left:0;width:100%;height:2px;background:rgba(88,166,255,.12);animation:scanDown 5s linear infinite;pointer-events:none;z-index:4}
-@keyframes scanDown{0%{top:-2px}100%{top:100%}}
 
 /* ── CAM BADGE / OVERLAY ── */
 .cam-badge{position:absolute;top:6px;right:6px;font-family:var(--mono);font-size:9px;padding:3px 8px;border-radius:4px;color:#fff;z-index:8;display:none;font-weight:600;animation:bdgBlink .9s ease infinite;letter-spacing:.5px}
@@ -101,7 +102,7 @@ html,body{height:100%;font-family:var(--sans);background:var(--bg);color:var(--t
 .evt:last-child{border-bottom:none}
 .evt.new{animation:evtIn .3s ease}
 @keyframes evtIn{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}
-.evt-ic{width:24px;height:24px;border-radius:5px;display:flex;align-items:center;justify-content:center;font-size:12px;flex-shrink:0;font-family:var(--mono);font-weight:600}
+.evt-ic{width:24px;height:24px;border-radius:5px;display:flex;align-items:center;justify-content:center;font-size:8px;letter-spacing:.5px;flex-shrink:0;font-family:var(--mono);font-weight:600}
 .evt-ic.gathering{background:var(--bg-amber);color:var(--amber)}
 .evt-ic.fall{background:var(--bg-red);color:var(--red)}
 .evt-ic.ok{background:var(--bg-green);color:var(--green)}
@@ -110,6 +111,19 @@ html,body{height:100%;font-family:var(--sans);background:var(--bg);color:var(--t
 .evt-sub{font-family:var(--mono);font-size:9px;color:var(--text2)}
 .evt-time{font-family:var(--mono);font-size:9px;color:var(--text3);margin-top:2px}
 
+/* ── CHARTS ── */
+.chart-legend{display:flex;gap:12px;margin-bottom:6px}
+.chip{display:flex;align-items:center;gap:5px;font-family:var(--mono);font-size:9px;color:var(--text2)}
+.chip .swatch{width:9px;height:9px;border-radius:2px}
+.chartbox svg{width:100%;display:block}
+.chartbox .axis-lbl{font-family:var(--mono);font-size:7px;fill:var(--text3)}
+.chartbox .gridline{stroke:var(--border);stroke-width:0.5;stroke-dasharray:2 3}
+.zone-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:2px}
+.zone-cell{aspect-ratio:4/3;border-radius:2px;background:var(--surf2);position:relative;cursor:default}
+.zone-cell span{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:8px;color:var(--text2)}
+.chart-empty{font-family:var(--mono);font-size:9px;color:var(--text3);padding:8px 0}
+#chart-tip{position:fixed;display:none;background:var(--surf2);border:0.5px solid var(--border);border-radius:5px;padding:5px 8px;font-family:var(--mono);font-size:9px;color:var(--text);z-index:500;pointer-events:none;white-space:pre;box-shadow:0 2px 8px rgba(0,0,0,.35)}
+
 /* ── MODAL ── */
 .backdrop{display:none;position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:1000;align-items:center;justify-content:center}
 .backdrop.open{display:flex}
@@ -117,10 +131,8 @@ html,body{height:100%;font-family:var(--sans);background:var(--bg);color:var(--t
 @keyframes mIn{from{opacity:0;transform:scale(.95)}to{opacity:1;transform:scale(1)}}
 .modal-hdr{padding:12px 14px;border-bottom:0.5px solid var(--border);display:flex;align-items:center;justify-content:space-between}
 .modal-title{font-size:13px;font-weight:600;font-family:var(--mono);display:flex;align-items:center;gap:8px}
-.modal-sev{font-size:9px;padding:2px 8px;border-radius:3px;font-weight:600;letter-spacing:.5px}
 .mcl{background:none;border:none;color:var(--text2);cursor:pointer;font-size:16px;padding:4px 6px;border-radius:4px;line-height:1}
 .mcl:hover{background:var(--surf2);color:var(--text)}
-.modal-icon-area{display:flex;align-items:center;justify-content:center;padding:28px 0 20px;background:var(--surf2);border-bottom:0.5px solid var(--border)}
 .modal-body{padding:14px}
 .modal-row{display:flex;justify-content:space-between;padding:6px 0;border-bottom:0.5px solid var(--border);font-size:12px}
 .modal-row:last-child{border-bottom:none}
@@ -128,8 +140,8 @@ html,body{height:100%;font-family:var(--sans);background:var(--bg);color:var(--t
 .mval2{font-family:var(--mono);color:var(--text)}
 .modal-foot{display:flex;gap:8px;padding:10px 14px;border-top:0.5px solid var(--border);background:var(--surf2)}
 .mbtn{padding:7px 14px;border-radius:6px;font-size:11px;cursor:pointer;font-family:var(--mono);transition:.15s;border:0.5px solid var(--border)}
-.mbtn-danger{background:var(--red);border-color:var(--red);color:#fff}
-.mbtn-danger:hover{opacity:.85}
+.mbtn-primary{background:var(--blue);border-color:var(--blue);color:#fff}
+.mbtn-primary:hover{opacity:.85}
 .mbtn-sec{background:none;color:var(--text2)}
 .mbtn-sec:hover{background:var(--surf);color:var(--text)}
 
@@ -145,38 +157,33 @@ html,body{height:100%;font-family:var(--sans);background:var(--bg);color:var(--t
 <!-- HEADER -->
 <header class="hdr">
   <div class="hdr-l">
-    <div class="dot"></div>
     <span class="logo">VISIONGUARD</span>
     <span class="live-badge"><span class="dot"></span>LIVE</span>
   </div>
   <div class="hdr-r">
     <span class="hdr-meta" id="clock">--:--:--</span>
-    <span class="hdr-meta" style="color:var(--text3)">K.J. Somaiya SOE</span>
-    <button class="theme-btn" id="themeBtn" onclick="toggleTheme()">☾ Dark</button>
+    <button class="theme-btn" id="themeBtn" onclick="toggleTheme()">Dark</button>
   </div>
 </header>
 
-<!-- LEGEND + SIM CONTROLS -->
+<!-- STATUS BAR -->
 <div class="info-bar">
   <span>
-    <span class="leg"><span class="swatch" style="background:#e3b341"></span>Crowd Gathering</span>
-    <span class="leg"><span class="swatch" style="background:#f85149"></span>Person Fall</span>
+    <span class="sim-btn" id="backendStatus" style="cursor:default;">Connecting…</span>
+    <span style="color:var(--text3)" id="pollStatus"></span>
   </span>
-  <span style="color:var(--text3)">YOLOv8n-pose · single-model dual detection</span>
-</div>
-<div class="sim-bar">
-  <span style="color:var(--text2)">BACKEND:</span>
-  <span class="sim-btn" id="backendStatus" style="cursor:default;">&#8987; Connecting...</span>
-  <span style="color:var(--text3);margin-left:4px" id="pollStatus">Polling every 2s</span>
-  <button class="sim-btn" style="margin-left:8px" onclick="clearAllAlerts()">&#10005; Clear All</button>
-  <button class="sim-btn" onclick="clearAlertDb()">&#128465; Clear DB</button>
+  <span>
+    <button class="sim-btn" onclick="window.open(API_BASE + '/export/alerts.csv')">Export CSV</button>
+    <button class="sim-btn" onclick="clearAllAlerts()">Clear Alerts</button>
+    <button class="sim-btn" onclick="clearAlertDb()">Clear History</button>
+  </span>
 </div>
 
 <!-- STATS -->
 <div class="stats">
   <div class="stat"><div class="stat-lbl">CAMERAS LIVE</div><div class="stat-num g" id="cams-live">–</div></div>
   <div class="stat"><div class="stat-lbl">ALERTS (LAST 60s)</div><div class="stat-num r" id="alert-count">0</div></div>
-  <div class="stat"><div class="stat-lbl">FRAMES ANALYZED</div><div class="stat-num a" id="frame-count">0</div></div>
+  <div class="stat"><div class="stat-lbl">DETECTION RATE</div><div class="stat-num a" id="det-fps">0</div><div class="stat-sub" id="det-lat"></div></div>
   <div class="stat"><div class="stat-lbl">PERSONS IN VIEW</div><div class="stat-num b" id="persons-now">0</div></div>
 </div>
 
@@ -199,14 +206,12 @@ html,body{height:100%;font-family:var(--sans);background:var(--bg);color:var(--t
         <svg id="cam1-placeholder" class="cam-svg" viewBox="0 0 280 150" xmlns="http://www.w3.org/2000/svg">
           <rect width="280" height="150" fill="#070a0f"/>
           <text x="140" y="75" fill="#2a4060" font-size="10" font-family="monospace" text-anchor="middle">Waiting for stream...</text>
-          <text x="140" y="90" fill="#1a3050" font-size="7" font-family="monospace" text-anchor="middle">YOLOv8 · CAM-01 · MAIN-ENTRANCE</text>
+          <text x="140" y="90" fill="#1a3050" font-size="7" font-family="monospace" text-anchor="middle">CAM-01 · MAIN-ENTRANCE</text>
         </svg>
         <div class="cam-badge" id="bdg-1"></div>
         <div class="flash-overlay" id="fl-1"></div>
-        <div class="scanline"></div>
-        <div class="scan-beam" style="animation-delay:0s"></div>
-        <div class="cam-foot"><span>YOLOv8n-pose</span><span id="ts-1"></span></div>
-        <button class="clear-btn" id="clr-1" onclick="clearAlert(1)">✕ Clear</button>
+        <div class="cam-foot"><span>CAM-01</span><span id="ts-1"></span></div>
+        <button class="clear-btn" id="clr-1" onclick="clearAlert(1)">Clear</button>
       </div>
     </div>
 
@@ -223,14 +228,56 @@ html,body{height:100%;font-family:var(--sans);background:var(--bg);color:var(--t
         <svg id="cam2-placeholder" class="cam-svg" viewBox="0 0 280 150" xmlns="http://www.w3.org/2000/svg">
           <rect width="280" height="150" fill="#070a0f"/>
           <text x="140" y="75" fill="#2a4060" font-size="10" font-family="monospace" text-anchor="middle">Waiting for stream...</text>
-          <text x="140" y="90" fill="#1a3050" font-size="7" font-family="monospace" text-anchor="middle">YOLOv8 · CAM-02 · CORRIDOR-B</text>
+          <text x="140" y="90" fill="#1a3050" font-size="7" font-family="monospace" text-anchor="middle">CAM-02 · CORRIDOR-B</text>
         </svg>
         <div class="cam-badge" id="bdg-2"></div>
         <div class="flash-overlay" id="fl-2"></div>
-        <div class="scanline"></div>
-        <div class="scan-beam" style="animation-delay:2.5s"></div>
-        <div class="cam-foot"><span>YOLOv8n-pose</span><span id="ts-2"></span></div>
-        <button class="clear-btn" id="clr-2" onclick="clearAlert(2)">✕ Clear</button>
+        <div class="cam-foot"><span>CAM-02</span><span id="ts-2"></span></div>
+        <button class="clear-btn" id="clr-2" onclick="clearAlert(2)">Clear</button>
+      </div>
+    </div>
+
+    <!-- CAM-03 (local webcam) -->
+    <div class="cam" id="cam-3">
+      <div class="cam-head">
+        <span class="cam-id">CAM-03 · Webcam</span>
+        <div class="cam-controls">
+          <span class="cam-st" id="st-3"><span class="st-dot"></span><span style="color:var(--green)">Normal</span></span>
+        </div>
+      </div>
+      <div class="cam-screen">
+        <img id="stream-3" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:1;display:none;">
+        <svg id="cam3-placeholder" class="cam-svg" viewBox="0 0 280 150" xmlns="http://www.w3.org/2000/svg">
+          <rect width="280" height="150" fill="#070a0f"/>
+          <text x="140" y="75" fill="#2a4060" font-size="10" font-family="monospace" text-anchor="middle">Waiting for stream...</text>
+          <text x="140" y="90" fill="#1a3050" font-size="7" font-family="monospace" text-anchor="middle">CAM-03 · WEBCAM</text>
+        </svg>
+        <div class="cam-badge" id="bdg-3"></div>
+        <div class="flash-overlay" id="fl-3"></div>
+        <div class="cam-foot"><span>CAM-03</span><span id="ts-3"></span></div>
+        <button class="clear-btn" id="clr-3" onclick="clearAlert(3)">Clear</button>
+      </div>
+    </div>
+
+    <!-- CAM-04 (reserved) -->
+    <div class="cam" id="cam-4">
+      <div class="cam-head">
+        <span class="cam-id">CAM-04 · Reserved</span>
+        <div class="cam-controls">
+          <span class="cam-st" id="st-4"><span class="st-dot"></span><span style="color:var(--green)">Normal</span></span>
+        </div>
+      </div>
+      <div class="cam-screen">
+        <img id="stream-4" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:1;display:none;">
+        <svg id="cam4-placeholder" class="cam-svg" viewBox="0 0 280 150" xmlns="http://www.w3.org/2000/svg">
+          <rect width="280" height="150" fill="#070a0f"/>
+          <text x="140" y="75" fill="#2a4060" font-size="10" font-family="monospace" text-anchor="middle">No feed configured</text>
+          <text x="140" y="90" fill="#1a3050" font-size="7" font-family="monospace" text-anchor="middle">CAM-04 · RESERVED</text>
+        </svg>
+        <div class="cam-badge" id="bdg-4"></div>
+        <div class="flash-overlay" id="fl-4"></div>
+        <div class="cam-foot"><span>CAM-04</span><span id="ts-4"></span></div>
+        <button class="clear-btn" id="clr-4" onclick="clearAlert(4)">Clear</button>
       </div>
     </div>
 
@@ -244,34 +291,60 @@ html,body{height:100%;font-family:var(--sans);background:var(--bg);color:var(--t
       <div class="panel-title">Event Log</div>
       <div class="evt-list" id="evt-list">
         <div class="evt">
-          <div class="evt-ic ok">✓</div>
+          <div class="evt-ic ok">OK</div>
           <div class="evt-body">
             <div class="evt-title">System Initialized</div>
-            <div class="evt-sub">2 cameras online · YOLOv8n-pose loaded</div>
+            <div class="evt-sub">Monitoring service started</div>
             <div class="evt-time" id="init-time"></div>
           </div>
         </div>
       </div>
     </div>
 
+    <!-- Occupancy trend -->
+    <div class="panel">
+      <div class="panel-title">Occupancy · avg persons/min (30m)</div>
+      <div class="chart-legend">
+        <span class="chip"><span class="swatch" style="background:var(--c-cam1)"></span>CAM-01</span>
+        <span class="chip"><span class="swatch" style="background:var(--c-cam2)"></span>CAM-02</span>
+        <span class="chip"><span class="swatch" style="background:var(--c-cam3)"></span>CAM-03</span>
+      </div>
+      <div class="chartbox" id="occ-chart"><div class="chart-empty">Collecting samples…</div></div>
+    </div>
+
+    <!-- Alerts per hour -->
+    <div class="panel">
+      <div class="panel-title">Alerts per hour (12h)</div>
+      <div class="chart-legend">
+        <span class="chip"><span class="swatch" style="background:var(--amber)"></span>Gathering</span>
+        <span class="chip"><span class="swatch" style="background:var(--red)"></span>Fall</span>
+      </div>
+      <div class="chartbox" id="alerts-chart"><div class="chart-empty">No alerts yet</div></div>
+    </div>
+
+    <!-- Zone heatmap -->
+    <div class="panel">
+      <div class="panel-title">Zone density heatmap (30m)</div>
+      <div class="zone-grid" id="zone-chart"></div>
+    </div>
+
   </div><!-- /sidebar -->
 </div><!-- /main -->
+
+<div id="chart-tip"></div>
 
 <!-- MODAL -->
 <div class="backdrop" id="backdrop" onclick="backdropClick(event)">
   <div class="modal">
     <div class="modal-hdr">
       <div class="modal-title">
-        <span id="m-icon"></span>
         <span id="m-title">Alert</span>
-        <span class="modal-sev" id="m-sev"></span>
       </div>
-      <button class="mcl" onclick="closeModal()">✕</button>
+      <button class="mcl" onclick="closeModal()">&times;</button>
     </div>
-    <div class="modal-icon-area" id="m-prev"></div>
     <div class="modal-body" id="m-body"></div>
     <div class="modal-foot">
-      <button class="mbtn mbtn-danger" onclick="acknowledgeAlert()">Acknowledge &amp; Dispatch</button>
+      <button class="mbtn mbtn-primary" onclick="acknowledgeAlert()">Acknowledge</button>
       <button class="mbtn mbtn-sec" onclick="closeModal()">Dismiss</button>
     </div>
   </div>
@@ -284,20 +357,22 @@ html,body{height:100%;font-family:var(--sans);background:var(--bg);color:var(--t
 // On success: hide placeholder and show the live img.
 // This prevents the permanent "blank cam" bug when a stream hiccups.
 const API_BASE       = 'http://localhost:8000';
-const ACTIVE_CAMS    = new Set([1, 2]);
+const ACTIVE_CAMS    = new Set([1, 2, 3]);  // keep in sync with VIDEO_SOURCES in config.py
 const STREAM_BASE    = API_BASE + '/video_feed/';
 const STREAM_RETRY_MS = 3000;
 const _retryTimers   = {};
 
 function initStreams() {
-  [1, 2].forEach(id => {
+  [1, 2, 3, 4].forEach(id => {
     const img = document.getElementById('stream-' + id);
     const ph  = document.getElementById('cam' + id + '-placeholder');
 
     if (!ACTIVE_CAMS.has(id)) {
-      // No detector feed for this cam — stay on placeholder permanently
+      // Camera not configured — keep the tile with its placeholder
       if (img) img.style.display = 'none';
       if (ph)  ph.style.display  = 'block';
+      const st = document.getElementById('st-' + id);
+      if (st) st.innerHTML = '<span class="st-dot" style="background:var(--text3)"></span><span style="color:var(--text3)">Offline</span>';
       return;
     }
 
@@ -329,22 +404,22 @@ function initStreams() {
 // ── CONFIG ──────────────────────────────────────────────────────
 const TYPES = {
   gathering: {
-    label:'CROWD GATHERING', short:'Gathering', icon:'👥',
-    color:'#e3b341', textColor:'#1a0f00', sev:'Medium',
-    desc:'Crowd density threshold exceeded in a zone',
-    action:'Deploy security patrol to area'
+    label:'CROWD GATHERING', short:'Gathering',
+    color:'#e3b341', sev:'Medium',
+    desc:'Crowd density threshold exceeded in a zone'
   },
   fall: {
-    label:'FALL DETECTED', short:'Fall', icon:'⚠',
-    color:'#f85149', textColor:'#fff', sev:'Critical',
-    desc:'Person fall detected — possible medical emergency',
-    action:'Send medical assistance immediately'
+    label:'FALL DETECTED', short:'Fall',
+    color:'#f85149', sev:'Critical',
+    desc:'Person fall detected — possible medical emergency'
   }
 };
 
 const CAMS = {
-  1:{ name:'CAM-01', loc:'Main Entrance', model:'YOLOv8n-pose' },
-  2:{ name:'CAM-02', loc:'Corridor B', model:'YOLOv8n-pose' },
+  1:{ name:'CAM-01', loc:'Main Entrance' },
+  2:{ name:'CAM-02', loc:'Corridor B' },
+  3:{ name:'CAM-03', loc:'Webcam' },
+  4:{ name:'CAM-04', loc:'Reserved' },
 };
 
 // ── STATE ────────────────────────────────────────────────────────
@@ -363,7 +438,7 @@ let lastAlertFiredAt = {}; // type → timestamp
 
 // Track last displayed stat values so we only animate on real changes
 let lastAlertCount = -1;
-let lastFrameCount = -1;
+let lastFps = -1;
 let lastPersonsNow = -1;
 let lastCamsLive = '';
 
@@ -383,14 +458,15 @@ window.addEventListener('DOMContentLoaded', () => {
   // lastModalAt intentionally NOT restored from localStorage — stale cooldowns
   // from previous sessions would silently block the modal from appearing.
   lastModalAt = {};
-  const poll = document.getElementById('pollStatus');
-  if (poll) poll.textContent = 'Polling every ' + (POLL_INTERVAL_MS/1000) + 's';
   setInterval(updateClock, 1000); updateClock();
   setInterval(updateTimestamps, 1000); updateTimestamps();
   initStreams();
+  initAlertSocket();
   loadAlertHistory();
   pollBackend();
   setInterval(pollBackend, POLL_INTERVAL_MS);
+  fetchAnalytics();
+  setInterval(fetchAnalytics, ANALYTICS_REFRESH_MS);
 });
 
 // Rebuild the event log from the DB so a page reload doesn't lose history.
@@ -401,32 +477,23 @@ async function loadAlertHistory(){
     rows.reverse().forEach(row => {
       const T = TYPES[row.type], C = CAMS[row.cam_id];
       if(!T || !C) return;
-      addToLog(row.cam_id, row.type, T, C, alertDetails(row.type, row),
-               (row.timestamp || '').split(' ')[1] || row.timestamp);
+      addToLog(row.cam_id, row.type, T, C,
+               (row.timestamp || '').split(' ')[1] || row.timestamp, row);
     });
   } catch(e) { /* backend offline — history loads on next reload */ }
-}
-
-// Human-readable detail line built from REAL detection data (no fake values).
-function alertDetails(type, row){
-  if(type === 'gathering')
-    return 'Persons: ' + (row.person_count ?? '–') + ' · Zone density: ' + (row.zone_density ?? '–');
-  if(type === 'fall')
-    return 'Box aspect ratio: ' + (row.ratio != null ? row.ratio : '–');
-  return '';
 }
 
 function p(n){ return n<10?'0'+n:''+n; }
 function ts(){ const n=new Date(); return p(n.getHours())+':'+p(n.getMinutes())+':'+p(n.getSeconds()); }
 function updateClock(){ const el=document.getElementById('clock'); if(el) el.textContent=ts(); }
-function updateTimestamps(){ [1,2].forEach(i=>{ const el=document.getElementById('ts-'+i); if(el) el.textContent=ts(); }); }
+function updateTimestamps(){ [1,2,3,4].forEach(i=>{ const el=document.getElementById('ts-'+i); if(el) el.textContent=ts(); }); }
 
 function clearAllAlerts(){
-  [1,2].forEach(i => clearAlert(i));
+  [1,2,3,4].forEach(i => clearAlert(i));
 }
 
 async function clearAlertDb(){
-  if(!confirm('Clear all alerts from the database?')) return;
+  if(!confirm('Clear all alert history from the database?')) return;
   try {
     const res = await fetch(API_BASE + '/alerts/clear', { method: 'POST' });
     if(!res.ok) throw new Error('Clear failed');
@@ -436,6 +503,19 @@ async function clearAlertDb(){
     localStorage.setItem('vg_last_crowd_id', '0');
     localStorage.setItem('vg_last_fall_id', '0');
     lastAlertCount = updateStatCard('alert-count', 0, lastAlertCount);
+    // The event log renders DB rows into the DOM — rebuild it empty so
+    // it matches the now-empty database
+    const list = document.getElementById('evt-list');
+    if(list) list.innerHTML = `
+      <div class="evt">
+        <div class="evt-ic ok">OK</div>
+        <div class="evt-body">
+          <div class="evt-title">History Cleared</div>
+          <div class="evt-sub">All alert records deleted</div>
+          <div class="evt-time">${ts()}</div>
+        </div>
+      </div>`;
+    fetchAnalytics();  // charts re-aggregate from the empty tables
   } catch (e) {
     alert('Failed to clear database. Is the backend running?');
   }
@@ -461,8 +541,8 @@ function updateStatCard(id, newVal, lastVal){
 }
 
 // ── TRIGGER ALERT ────────────────────────────────────────────────
-// details: human-readable string built from real detection data
-function triggerAlert(cam, type, details){
+// row: the DB row (carries id + evidence filename for ack/gallery)
+function triggerAlert(cam, type, row){
   if(activeAlerts[cam]) return;
   activeAlerts[cam] = type;
   const T = TYPES[type], C = CAMS[cam];
@@ -477,17 +557,15 @@ function triggerAlert(cam, type, details){
 
   const stEl = document.getElementById('st-'+cam);
   const stColors={gathering:'var(--amber)',fall:'var(--red)'};
-  const stLabels={gathering:'⚠ Gathering',fall:'! Fall'};
+  const stLabels={gathering:'Gathering',fall:'Fall'};
   if(stEl) stEl.innerHTML=`<span class="st-dot" style="background:${stColors[type]}"></span><span style="color:${stColors[type]}">${stLabels[type]}</span>`;
 
   const clrBtn = document.getElementById('clr-'+cam);
   if(clrBtn) clrBtn.style.display='block';
 
-  playBeep(type);
-
   const alertTime = ts();
-  addToLog(cam, type, T, C, details, alertTime);
-  setTimeout(()=>showModal(cam, type, T, C, details, alertTime), 700);
+  addToLog(cam, type, T, C, alertTime, row);
+  setTimeout(()=>showModal(cam, type, T, C, alertTime, row), 700);
 }
 
 // ── FLASH ────────────────────────────────────────────────────────
@@ -511,36 +589,20 @@ function clearAlert(cam){
   const clr=document.getElementById('clr-'+cam); if(clr) clr.style.display='none';
   const c=document.getElementById('cam-'+cam); if(c) c.className='cam';
   const st=document.getElementById('st-'+cam);
-  if(st) st.innerHTML=`<span class="st-dot"></span><span style="color:var(--green)">Normal</span>`;
-}
-
-// ── SOUND ────────────────────────────────────────────────────────
-function playBeep(type){
-  try{
-    const ctx=new(window.AudioContext||window.webkitAudioContext)();
-    const osc=ctx.createOscillator(); const g=ctx.createGain();
-    osc.connect(g); g.connect(ctx.destination);
-    if(type==='gathering'){
-      osc.type='sine';
-      osc.frequency.setValueAtTime(620,ctx.currentTime);
-      osc.frequency.linearRampToValueAtTime(820,ctx.currentTime+.25);
-    } else {
-      osc.type='sawtooth';
-      osc.frequency.setValueAtTime(350,ctx.currentTime);
-      osc.frequency.exponentialRampToValueAtTime(80,ctx.currentTime+.45);
-    }
-    g.gain.setValueAtTime(.15,ctx.currentTime);
-    g.gain.exponentialRampToValueAtTime(.001,ctx.currentTime+.55);
-    osc.start(ctx.currentTime); osc.stop(ctx.currentTime+.6);
-  }catch(e){}
+  if(st) st.innerHTML = ACTIVE_CAMS.has(cam)
+    ? `<span class="st-dot"></span><span style="color:var(--green)">Normal</span>`
+    : `<span class="st-dot" style="background:var(--text3)"></span><span style="color:var(--text3)">Offline</span>`;
 }
 
 // ── EVENT LOG ────────────────────────────────────────────────────
-const ICONS={gathering:'👥',fall:'⚠',ok:'✓'};
+// Two-letter type badges — no icon fonts or emoji
+const ICONS={gathering:'CG',fall:'FD',ok:'OK'};
 
-function addToLog(cam, type, T, C, details, alertTime){
+function addToLog(cam, type, T, C, alertTime, row){
   const list=document.getElementById('evt-list'); if(!list) return;
   const timeStr = alertTime || ts();
+  const ackLine = row && row.acknowledged_at
+    ? `<div class="evt-sub" style="color:var(--green)">Ack: ${row.acknowledged_at.split(' ')[1] || row.acknowledged_at}</div>` : '';
   const evt=document.createElement('div');
   evt.className='evt new';
   evt.innerHTML=`
@@ -548,46 +610,48 @@ function addToLog(cam, type, T, C, details, alertTime){
     <div class="evt-body">
       <div class="evt-title" style="color:${T.color}">${T.label}</div>
       <div class="evt-sub">${C.name} · ${C.loc}</div>
-      <div class="evt-sub">${details ? details + ' · ' : ''}Sev: ${T.sev}</div>
+      ${ackLine}
       <div class="evt-time">${timeStr}</div>
     </div>`;
+  // entries with an evidence snapshot open it in the modal on click
+  if(row && row.frame_path){
+    evt.style.cursor = 'pointer';
+    evt.title = 'View evidence snapshot';
+    evt.onclick = () => showModal(cam, type, T, C,
+                                  row.timestamp || timeStr, row, true);
+  }
   list.insertBefore(evt, list.firstChild);
 }
 
 // ── MODAL ────────────────────────────────────────────────────────
-function showModal(cam, type, T, C, details, timestamp){
+// row: DB row for this alert (id, frame_path, acknowledged_at).
+// fromLog: true when opened by clicking a log entry — bypasses the
+// cooldown that only applies to automatic popups.
+function showModal(cam, type, T, C, timestamp, row, fromLog){
   // Don't open a second modal if one is already visible
   if(document.getElementById('backdrop').classList.contains('open')) return;
-  const now = Date.now();
-  if(lastModalAt[type] && (now - lastModalAt[type]) < MODAL_COOLDOWN_MS) return;
-  lastModalAt[type] = now;
-  currentModal={cam,type};
-
-  const iconArea = document.getElementById('m-prev');
-  if(iconArea){
-    const iconMap = {gathering:'👥', fall:'🚨'};
-    const bgMap = {
-      gathering:'rgba(227,179,65,0.15)', fall:'rgba(248,81,73,0.15)'
-    };
-    iconArea.style.background = bgMap[type] || 'var(--surf2)';
-    iconArea.innerHTML = `<div style="text-align:center">
-      <div style="font-size:52px;line-height:1">${iconMap[type]||'⚠'}</div>
-      <div style="font-family:var(--mono);font-size:10px;color:${T.color};margin-top:8px;letter-spacing:1px;font-weight:600">${T.label}</div>
-    </div>`;
+  if(!fromLog){
+    const now = Date.now();
+    if(lastModalAt[type] && (now - lastModalAt[type]) < MODAL_COOLDOWN_MS) return;
+    lastModalAt[type] = now;
   }
+  currentModal={cam, type, id: row ? row.id : null};
 
-  document.getElementById('m-icon').textContent = '';
   document.getElementById('m-title').textContent = T.label;
-  const sev = document.getElementById('m-sev');
-  sev.textContent = T.sev; sev.style.background = T.color; sev.style.color = T.textColor;
+
+  const evidence = row && row.frame_path
+    ? `<img src="${API_BASE}/evidence/${row.frame_path}" alt="Evidence snapshot"
+         style="width:100%;border-radius:6px;margin-bottom:10px;display:block"
+         onerror="this.style.display='none'">` : '';
+  const ackRow = row && row.acknowledged_at
+    ? `<div class="modal-row"><span class="mkey">Acknowledged</span><span class="mval2" style="color:var(--green)">${row.acknowledged_at}</span></div>` : '';
 
   document.getElementById('m-body').innerHTML = `
+    ${evidence}
     <div class="modal-row"><span class="mkey">Camera</span><span class="mval2">${C.name} · ${C.loc}</span></div>
     <div class="modal-row"><span class="mkey">Detection</span><span class="mval2" style="color:${T.color}">${T.label}</span></div>
-    ${details ? `<div class="modal-row"><span class="mkey">Detection Data</span><span class="mval2">${details}</span></div>` : ''}
     <div class="modal-row"><span class="mkey">Timestamp</span><span class="mval2">${timestamp || ts()}</span></div>
-    <div class="modal-row"><span class="mkey">Severity</span><span class="mval2" style="color:${T.color}">${T.sev}</span></div>
-    <div class="modal-row"><span class="mkey">Recommended Action</span><span class="mval2">${T.action}</span></div>`;
+    ${ackRow}`;
 
   _modalOpenedAt = Date.now();
   document.getElementById('backdrop').classList.add('open');
@@ -603,17 +667,22 @@ function backdropClick(e){
 
 function acknowledgeAlert(){
   if(currentModal){
+    // Persist the acknowledgement so it survives reloads and restarts
+    if(currentModal.id){
+      fetch(`${API_BASE}/alerts/ack?type=${currentModal.type}&id=${currentModal.id}`,
+            { method: 'POST' }).catch(() => {});
+    }
     clearAlert(currentModal.cam);
     const list=document.getElementById('evt-list');
     if(list){
       const evt=document.createElement('div');
       evt.className='evt new';
       evt.innerHTML=`
-        <div class="evt-ic ok">✓</div>
+        <div class="evt-ic ok">OK</div>
         <div class="evt-body">
           <div class="evt-title">Alert Acknowledged</div>
           <div class="evt-sub">${CAMS[currentModal.cam].name} · ${CAMS[currentModal.cam].loc}</div>
-          <div class="evt-sub">Security dispatched</div>
+          <div class="evt-sub">Acknowledged by operator</div>
           <div class="evt-time">${ts()}</div>
         </div>`;
       list.insertBefore(evt, list.firstChild);
@@ -626,7 +695,128 @@ function acknowledgeAlert(){
 function toggleTheme(){
   isDark=!isDark;
   document.documentElement.setAttribute('data-theme', isDark?'dark':'light');
-  document.getElementById('themeBtn').textContent=isDark?'☾ Dark':'☀ Light';
+  document.getElementById('themeBtn').textContent=isDark?'Dark':'Light';
+  renderAnalytics();  // heatmap alpha colors resolve from the new theme
+}
+
+// ── ANALYTICS CHARTS ──────────────────────────────────────────────
+// Plain SVG, no libraries. One shared tooltip; charts re-render on
+// each 30s refresh and on theme toggle (colors resolve from CSS vars).
+const ANALYTICS_REFRESH_MS = 30000;
+let lastAnalytics = null;
+
+const tip = () => document.getElementById('chart-tip');
+document.addEventListener('mouseover', e => {
+  const t = e.target.closest('[data-tip]');
+  if(!t) return;
+  const el = tip();
+  el.textContent = t.getAttribute('data-tip');
+  el.style.display = 'block';
+});
+document.addEventListener('mousemove', e => {
+  const el = tip();
+  if(el.style.display !== 'block') return;
+  el.style.left = Math.min(e.clientX + 12, window.innerWidth - 130) + 'px';
+  el.style.top = (e.clientY + 12) + 'px';
+});
+document.addEventListener('mouseout', e => {
+  if(e.target.closest && e.target.closest('[data-tip]')) tip().style.display = 'none';
+});
+
+async function fetchAnalytics(){
+  try {
+    const [occ, alerts, zones] = await Promise.all([
+      fetch(API_BASE + '/analytics/occupancy?minutes=30').then(r => r.json()),
+      fetch(API_BASE + '/analytics/alerts?hours=12').then(r => r.json()),
+      fetch(API_BASE + '/analytics/zones?minutes=30').then(r => r.json())
+    ]);
+    lastAnalytics = {occ, alerts, zones};
+    renderAnalytics();
+  } catch(e) { /* backend offline — keep last render */ }
+}
+
+function renderAnalytics(){
+  if(!lastAnalytics) return;
+  renderOccupancy(lastAnalytics.occ);
+  renderAlertBars(lastAnalytics.alerts);
+  renderZones(lastAnalytics.zones);
+}
+
+function renderOccupancy(rows){
+  const box = document.getElementById('occ-chart');
+  if(!rows.length){ box.innerHTML = '<div class="chart-empty">Collecting samples…</div>'; return; }
+  const minutes = [...new Set(rows.map(r => r.minute))].sort();
+  const series = {};
+  rows.forEach(r => { (series[r.cam_id] = series[r.cam_id] || {})[r.minute] = r.avg_persons; });
+  const W = 270, H = 80, PL = 16, PB = 12, PT = 4;
+  const yMax = Math.max(4, ...rows.map(r => r.avg_persons));
+  const x = i => minutes.length > 1 ? PL + i * (W - PL) / (minutes.length - 1) : PL;
+  const y = v => PT + (H - PT - PB) * (1 - v / yMax);
+  const colors = {1:'var(--c-cam1)', 2:'var(--c-cam2)', 3:'var(--c-cam3)'};
+  let svg = `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">`;
+  [0.5, 1].forEach(f => {
+    svg += `<line class="gridline" x1="${PL}" y1="${y(yMax*f)}" x2="${W}" y2="${y(yMax*f)}"/>`;
+  });
+  svg += `<text class="axis-lbl" x="0" y="${y(yMax)+3}">${yMax}</text>`;
+  svg += `<text class="axis-lbl" x="${PL}" y="${H-2}">${minutes[0].slice(11)}</text>`;
+  svg += `<text class="axis-lbl" x="${W-26}" y="${H-2}">${minutes[minutes.length-1].slice(11)}</text>`;
+  for(const cam of Object.keys(series)){
+    const pts = minutes.map((m, i) => series[cam][m] != null ? `${x(i)},${y(series[cam][m])}` : null)
+                       .filter(Boolean).join(' ');
+    if(pts) svg += `<polyline points="${pts}" fill="none" stroke="${colors[cam]||'var(--blue)'}" stroke-width="2" stroke-linejoin="round"/>`;
+  }
+  // invisible hover strips, one per minute (wide hit targets)
+  minutes.forEach((m, i) => {
+    const vals = Object.keys(series).map(cam =>
+      `CAM-0${cam}: ${series[cam][m] != null ? series[cam][m] : '–'}`).join('\n');
+    const w = (W - PL) / Math.max(minutes.length - 1, 1);
+    svg += `<rect x="${x(i)-w/2}" y="0" width="${w}" height="${H}" fill="transparent" data-tip="${m.slice(11)}\n${vals}"/>`;
+  });
+  box.innerHTML = svg + '</svg>';
+}
+
+function renderAlertBars(rows){
+  const box = document.getElementById('alerts-chart');
+  if(!rows.length){ box.innerHTML = '<div class="chart-empty">No alerts yet</div>'; return; }
+  const W = 270, H = 70, PB = 12, PT = 4;
+  const yMax = Math.max(...rows.map(r => r.gathering + r.fall));
+  const bw = Math.min(18, (W - 4) / rows.length - 2);
+  const scale = v => v / yMax * (H - PT - PB);
+  let svg = `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">`;
+  svg += `<text class="axis-lbl" x="0" y="${PT+5}">${yMax}</text>`;
+  rows.forEach((r, i) => {
+    const xp = 14 + i * ((W - 14) / rows.length);
+    const hG = scale(r.gathering), hF = scale(r.fall);
+    let yCursor = H - PB;
+    if(r.gathering){
+      svg += `<rect x="${xp}" y="${yCursor-hG}" width="${bw}" height="${hG}" rx="1" fill="var(--amber)"/>`;
+      yCursor -= hG + 2;  // 2px surface gap between stacked segments
+    }
+    if(r.fall)
+      svg += `<rect x="${xp}" y="${yCursor-hF}" width="${bw}" height="${hF}" rx="1" fill="var(--red)"/>`;
+    svg += `<rect x="${xp-1}" y="0" width="${bw+2}" height="${H}" fill="transparent" data-tip="${r.hour.slice(11)}:00\nGathering: ${r.gathering}\nFall: ${r.fall}"/>`;
+    if(i === 0 || i === rows.length - 1)
+      svg += `<text class="axis-lbl" x="${xp}" y="${H-2}">${r.hour.slice(11)}h</text>`;
+  });
+  box.innerHTML = svg + '</svg>';
+}
+
+function renderZones(data){
+  const grid = document.getElementById('zone-chart');
+  if(!data || !data.total){ return; }
+  const blue = getComputedStyle(document.documentElement).getPropertyValue('--blue').trim();
+  grid.style.gridTemplateColumns = `repeat(${data.cols},1fr)`;
+  grid.innerHTML = '';
+  data.total.forEach((row, r) => row.forEach((v, c) => {
+    const cell = document.createElement('div');
+    cell.className = 'zone-cell';
+    const a = data.max ? 0.08 + 0.85 * (v / data.max) : 0;
+    if(v > 0) cell.style.background =
+      blue + Math.round(a * 255).toString(16).padStart(2, '0');
+    cell.setAttribute('data-tip', `Zone r${r+1}c${c+1}\nPersons seen: ${v}`);
+    cell.innerHTML = `<span>${v || ''}</span>`;
+    grid.appendChild(cell);
+  }));
 }
 
 // ── BACKEND STATUS ────────────────────────────────────────────────
@@ -635,18 +825,68 @@ function setBackendStatus(connected){
   const poll = document.getElementById('pollStatus');
   if(!btn) return;
   if(connected){
-    btn.textContent = '● Connected';
+    btn.textContent = 'Connected';
     btn.style.borderColor = 'var(--green)';
     btn.style.color = 'var(--green)';
     btn.style.background = 'var(--bg-green)';
-    if(poll) poll.textContent = 'Live — polling every ' + (POLL_INTERVAL_MS/1000) + 's';
+    if(poll) poll.textContent = 'Live';
   } else {
-    btn.textContent = '○ Disconnected';
+    btn.textContent = 'Offline';
     btn.style.borderColor = 'var(--red)';
     btn.style.color = 'var(--red)';
     btn.style.background = 'var(--bg-red)';
-    if(poll) poll.textContent = 'Backend offline — retrying...';
+    if(poll) poll.textContent = 'Retrying…';
   }
+}
+
+// ── ALERT ROW HANDLER (shared by WebSocket push and polling) ──────
+// cam_id comes from the DB row so we always alert the right camera.
+// Row-ID dedup makes this idempotent across both delivery paths.
+function handleAlertRow(type, row){
+  if(!row || !row.id) return;
+  const active = row.is_fall != null ? row.is_fall : row.is_alert;
+  if(!active) return;
+  if(type === 'gathering'){
+    if(row.id === lastCrowdId) return;
+    lastCrowdId = row.id;
+    localStorage.setItem('vg_last_crowd_id', String(lastCrowdId));
+  } else {
+    if(row.id === lastFallId) return;
+    lastFallId = row.id;
+    localStorage.setItem('vg_last_fall_id', String(lastFallId));
+  }
+  const now = Date.now();
+  if(lastAlertFiredAt[type] && now - lastAlertFiredAt[type] <= ALERT_DEDUP_MS) return;
+  lastAlertFiredAt[type] = now;
+  const cam = row.cam_id || 1;
+  clearAlert(cam);
+  delete lastModalAt[type];
+  triggerAlert(cam, type, row);
+}
+
+// ── WEBSOCKET ALERT PUSH (instant; polling remains as fallback) ───
+let wsConnected = false;
+
+function initAlertSocket(){
+  let ws;
+  try {
+    ws = new WebSocket(API_BASE.replace(/^http/, 'ws') + '/ws/alerts');
+  } catch(e) {
+    setTimeout(initAlertSocket, STREAM_RETRY_MS);
+    return;
+  }
+  ws.onopen = () => { wsConnected = true; setBackendStatus(true); };
+  ws.onmessage = (msg) => {
+    try {
+      const ev = JSON.parse(msg.data);
+      if(TYPES[ev.type]) handleAlertRow(ev.type, ev);
+    } catch(e) {}
+  };
+  ws.onclose = () => {
+    if(wsConnected){ wsConnected = false; setBackendStatus(backendConnected); }
+    setTimeout(initAlertSocket, STREAM_RETRY_MS);
+  };
+  ws.onerror = () => ws.close();
 }
 
 // ── BACKEND POLLING ───────────────────────────────────────────────
@@ -663,40 +903,18 @@ async function pollBackend(){
     // Only update stat cards when the value actually changes so the
     // pop animation doesn't fire on every poll.
     lastAlertCount = updateStatCard('alert-count', stats.alert_count, lastAlertCount);
-    lastFrameCount = updateStatCard('frame-count', stats.frames_processed, lastFrameCount);
+    lastFps = updateStatCard('det-fps', stats.detection_fps ?? 0, lastFps);
+    const latEl = document.getElementById('det-lat');
+    if(latEl) latEl.textContent = stats.avg_latency_ms != null
+      ? 'fps · ~' + stats.avg_latency_ms + ' ms/frame' : '';
     lastPersonsNow = updateStatCard('persons-now', stats.persons_now, lastPersonsNow);
     lastCamsLive   = updateStatCard('cams-live',
                        stats.cameras_live + ' / ' + stats.cameras_total, lastCamsLive);
 
-    // ── Crowd / Gathering ─────────────────────────────────────────
-    // cam_id comes from the DB row so we always alert the right camera.
-    if(latest.is_alert && latest.id && latest.id !== lastCrowdId){
-      lastCrowdId = latest.id;
-      localStorage.setItem('vg_last_crowd_id', String(lastCrowdId));
-      const now = Date.now();
-      if(!lastAlertFiredAt['gathering'] || now - lastAlertFiredAt['gathering'] > ALERT_DEDUP_MS){
-        lastAlertFiredAt['gathering'] = now;
-        const cam = latest.cam_id || 1;
-        clearAlert(cam);
-        delete lastModalAt['gathering'];
-        triggerAlert(cam, 'gathering', alertDetails('gathering', latest));
-      }
-    }
-
-    // ── Fall detection ────────────────────────────────────────────
-    // Same pattern — use cam_id from DB row.
-    if(latestFall && latestFall.is_fall && latestFall.id && latestFall.id !== lastFallId){
-      lastFallId = latestFall.id;
-      localStorage.setItem('vg_last_fall_id', String(lastFallId));
-      const now = Date.now();
-      if(!lastAlertFiredAt['fall'] || now - lastAlertFiredAt['fall'] > ALERT_DEDUP_MS){
-        lastAlertFiredAt['fall'] = now;
-        const cam = latestFall.cam_id || 2;
-        clearAlert(cam);
-        delete lastModalAt['fall'];
-        triggerAlert(cam, 'fall', alertDetails('fall', latestFall));
-      }
-    }
+    // Alert rows go through the same handlers the WebSocket uses;
+    // row-ID dedup means whichever path arrives first wins, no doubles.
+    handleAlertRow('gathering', latest);
+    handleAlertRow('fall', latestFall);
 
     if(!backendConnected){
       backendConnected = true;

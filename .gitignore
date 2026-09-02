@@ -1,6 +1,8 @@
 # generated at runtime
 evidence_frames/
 crowd_events.db
+crowd_events.db-wal
+crowd_events.db-shm
 
 __pycache__/
 *.pyc
@@ -8,3 +10,8 @@ __pycache__/
 venv/
 .venv/
 .pytest_cache/
+
+# Footage the running config does not use. video4.mp4 is 45 MB, and both it
+# and video3.mp4 show identifiable people and places, so neither is shipped.
+videos/video3.mp4
+videos/video4.mp4

@@ -100,6 +100,10 @@ def init_db():
     os.makedirs(config.EVIDENCE_DIR, exist_ok=True)
     conn = sqlite3.connect(config.DB_PATH)
     cur = conn.cursor()
+    # WAL lets the API read while camera threads write, and lets the camera
+    # threads write without blocking each other — so a busy camera never
+    # stalls another camera's alert row.
+    cur.execute("PRAGMA journal_mode=WAL")
     if config.RESET_DB_ON_START:
         cur.execute("DROP TABLE IF EXISTS crowd_events")
         cur.execute("DROP TABLE IF EXISTS fall_events")
@@ -132,6 +136,14 @@ def init_db():
     _ensure_column(cur, "crowd_events", "acknowledged_at", "TEXT")
     _ensure_column(cur, "fall_events", "frame_path", "TEXT")
     _ensure_column(cur, "fall_events", "acknowledged_at", "TEXT")
+    for table in ("crowd_events", "fall_events"):
+        _ensure_column(cur, table, "escalation_level", "INTEGER DEFAULT 0")
+        _ensure_column(cur, table, "escalated_at", "TEXT")
+        # Retire every pre-existing alert to the top of the ladder. Without
+        # this, restarting the server would find yesterday's unacknowledged
+        # alerts still "pending" and fire a burst of notifications for them.
+        cur.execute(f"UPDATE {table} SET escalation_level = 2 "
+                    f"WHERE escalation_level IS NULL OR escalation_level < 2")
     cur.execute("""
         CREATE TABLE IF NOT EXISTS occupancy_samples (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -177,7 +189,8 @@ def draw_grid(frame, counts):
                 cv2.putText(frame, str(count), (x1 + 10, y1 + 30),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
             else:
-                cv2.rectangle(frame, (x1, y1), (x2, y2), (255, 255, 255), 1)
+                # muted so the grid reads as a reference overlay, not as data
+                cv2.rectangle(frame, (x1, y1), (x2, y2), (130, 130, 130), 1)
     return frame
 
 
@@ -285,6 +298,62 @@ def confirm_falls(persons, streaks):
     return confirmed
 
 
+# ================================================================
+# ON-FRAME STATUS OVERLAYS
+# ================================================================
+HUD_CLEAR = (110, 200, 110)   # BGR — green
+HUD_ALERT = (60, 60, 255)     # BGR — red
+HUD_TEXT = (235, 235, 235)
+HUD_H = 34                    # status strip height, px
+STAMP_H = 22                  # evidence caption band height, px
+
+
+def _dim_band(frame, y1, y2, strength):
+    """Darken a horizontal band in place so text stays readable over any
+    footage. Pixels outside the band are mathematically unchanged."""
+    overlay = frame.copy()
+    cv2.rectangle(overlay, (0, y1), (frame.shape[1], y2), (0, 0, 0), -1)
+    cv2.addWeighted(overlay, strength, frame, 1 - strength, 0, frame)
+
+
+def draw_hud(frame, cam_id, person_count, max_density, crowd_alert, fall_alert):
+    """Per-detector status strip.
+
+    Each detector gets its own labelled line, always present. The CROWD line
+    never says anything about falls and the FALL line never says anything
+    about crowding, so a snapshot can't be misread as the wrong alert type.
+    (The old HUD printed a bare "OK" / "!! FALL DETECTED !!" banner that read
+    as a verdict on the whole frame, which made crowd evidence snapshots look
+    like fall alerts.)
+    """
+    # No camera label here: the dashboard tile header already names the
+    # camera, and the evidence caption carries it for standalone snapshots.
+    _dim_band(frame, 0, HUD_H, 0.45)
+    noun = "person" if person_count == 1 else "persons"
+    cv2.putText(frame, f"CROWD  {person_count} {noun}  peak zone {max_density}",
+                (8, 14), cv2.FONT_HERSHEY_SIMPLEX, 0.42,
+                HUD_ALERT if crowd_alert else HUD_CLEAR, 1, cv2.LINE_AA)
+    cv2.putText(frame, "FALL   DETECTED" if fall_alert else "FALL   none",
+                (8, 28), cv2.FONT_HERSHEY_SIMPLEX, 0.42,
+                HUD_ALERT if fall_alert else HUD_CLEAR, 1, cv2.LINE_AA)
+    return frame
+
+
+def stamp_evidence(frame, caption):
+    """Copy of the frame captioned with the alert it is evidence *for*.
+
+    A crowd snapshot routinely contains a fall in progress (and vice versa),
+    so without this the picture alone cannot say which alert it belongs to.
+    Runs once per state transition, not per frame.
+    """
+    out = frame.copy()
+    h = out.shape[0]
+    _dim_band(out, h - STAMP_H, h, 0.65)
+    cv2.putText(out, caption, (8, h - 7), cv2.FONT_HERSHEY_SIMPLEX, 0.4,
+                HUD_ALERT, 1, cv2.LINE_AA)
+    return out
+
+
 def draw_fall_overlays(frame, confirmed):
     for p in confirmed:
         x1, y1, x2, y2 = p["box"]
@@ -297,13 +366,83 @@ def draw_fall_overlays(frame, confirmed):
 
 
 # ================================================================
-# CAMERA THREAD
+# CAPTURE / INFERENCE HANDOFF
 # ================================================================
-def camera_thread(cam_id, source, frame_store, live_stats):
-    model = YOLO(config.POSE_MODEL_PATH)  # own instance: thread safety
-    conn = sqlite3.connect(config.DB_PATH)
-    cur = conn.cursor()
+# How far the display may be held back to stay in step with inference.
+# Caps both memory and the worst-case delay the operator sees.
+MAX_DISPLAY_LAG_FRAMES = 30
+DISPLAY_LAG_SMOOTHING = 0.2   # EMA factor; keeps the delay from jittering
+class LatestFrame:
+    """Single-slot mailbox: the capture thread drops the newest raw frame
+    here and the inference thread picks it up. Old frames are overwritten
+    rather than queued, so inference always works on current reality and
+    never builds a backlog it has to catch up on."""
 
+    def __init__(self):
+        self._lock = threading.Lock()
+        self._frame = None
+        self._seq = 0        # bumped per frame; lets the reader skip repeats
+        self._generation = 0  # bumped when a video file loops
+
+    def put(self, frame):
+        with self._lock:
+            self._frame = frame
+            self._seq += 1
+            return self._seq
+
+    def get(self):
+        with self._lock:
+            return self._frame, self._seq, self._generation
+
+    def new_generation(self):
+        """Video file wrapped around — tell the inference side to reset the
+        alert state machine so the first detection of the new pass alerts."""
+        with self._lock:
+            self._generation += 1
+
+
+class Overlay:
+    """Latest inference output for one camera. Written by that camera's
+    inference thread, read by its capture thread every frame. Values are
+    replaced wholesale, never mutated in place, so a reader always sees a
+    consistent set."""
+
+    def __init__(self):
+        self._lock = threading.Lock()
+        self._d = {"result": None, "counts": {}, "confirmed": [],
+                   "person_count": 0, "max_density": 0,
+                   "crowd_alert": False, "fall_alert": False,
+                   "seq": 0}   # which captured frame these boxes describe
+
+    def set(self, **kw):
+        with self._lock:
+            self._d = kw
+
+    def get(self):
+        with self._lock:
+            return self._d
+
+
+def annotate(frame, cam_id, ov):
+    """Draw one camera's overlay onto a freshly captured frame and scale it
+    to the streamed size. Runs on every captured frame (~5 ms), which is what
+    keeps the feed smooth while inference plods along in its own thread."""
+    out = draw_grid(frame.copy(), ov["counts"])
+    if ov["result"] is not None:
+        # conf=False keeps per-person labels to "id:3 person" — the
+        # confidence score is noise on a 480px-wide feed.
+        out = ov["result"].plot(img=out, conf=False)
+    out = draw_fall_overlays(out, ov["confirmed"])
+    out = cv2.resize(out, config.FRAME_SIZE)
+    draw_hud(out, cam_id, ov["person_count"], ov["max_density"],
+             ov["crowd_alert"], ov["fall_alert"])
+    return out
+
+
+# ================================================================
+# CAPTURE THREAD — reads, draws, encodes, streams. Never blocks on the model.
+# ================================================================
+def capture_thread(cam_id, source, frame_store, latest, overlay):
     cap = cv2.VideoCapture(source)
     if not cap.isOpened():
         print(f"ERROR opening camera source: {source}")
@@ -312,13 +451,9 @@ def camera_thread(cam_id, source, frame_store, live_stats):
     src_fps = cap.get(cv2.CAP_PROP_FPS) or 25
     frame_delay = 1.0 / src_fps
     is_file = isinstance(source, str) and os.path.isfile(source)
-
-    frame_num = 0
-    crowd_state = None   # None = neutral until first detection
-    fall_state = False
-    fall_streaks = {}    # tracker ID → consecutive fallen detections
-    last_sample = 0.0    # last occupancy-sample write time
-
+    # Recent frames, so the display can be held back to match the overlay
+    history = deque(maxlen=MAX_DISPLAY_LAG_FRAMES + 1)
+    display_lag = 0.0
     print(f"CAM-{cam_id:02d} started: {source} ({src_fps:.1f} fps)")
 
     while True:
@@ -327,145 +462,215 @@ def camera_thread(cam_id, source, frame_store, live_stats):
 
         if not ret:
             if not is_file:
-                print(f"CAM-{cam_id:02d} stream lost, retrying...")
-                time.sleep(1)
+                # Live cameras need a moment to warm up: the first read after
+                # opening often fails before the driver delivers frames.
+                time.sleep(0.5)
                 continue
             cap.set(cv2.CAP_PROP_POS_FRAMES, 0)  # loop video files
-            frame_num = 0
-            crowd_state = None
-            fall_state = False
-            fall_streaks = {}
+            latest.new_generation()
+            history.clear()                      # don't show the previous pass
+            display_lag = 0.0
             continue
 
-        frame_num += 1
-        if frame_num % config.DETECT_EVERY == 0:
-            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            # track() keeps per-person IDs stable across frames (ByteTrack),
-            # which lets fall confirmation follow individuals, not frames
-            t_infer = time.perf_counter()
-            result = model.track(frame, classes=[0], persist=True,
-                                 conf=config.DETECTION_CONF_MIN, verbose=False)[0]
-            latency_ms = (time.perf_counter() - t_infer) * 1000
-            boxes = result.boxes
-            person_count = len(boxes)
+        seq = latest.put(frame)                 # hand off for inference
+        history.append((seq, frame))
 
-            counts, max_density = zone_densities(boxes, frame.shape)
-            crowd_alert = person_count >= config.CROWD_MIN_PERSONS
+        # Show the frame the current boxes were actually computed from, not
+        # the newest one. Inference lands a few frames behind, so drawing its
+        # output on live pixels makes the overlay visibly trail the action.
+        # Holding the display back by that same lag re-aligns them: the video
+        # still advances every frame (so it stays smooth) but is delayed by
+        # one inference cycle, which is imperceptible on a monitoring feed.
+        ov = overlay.get()
+        lag = seq - ov["seq"] if ov["seq"] else 0
+        display_lag += DISPLAY_LAG_SMOOTHING * (lag - display_lag)
+        want = seq - min(int(display_lag), len(history) - 1)
+        shown = next((f for s, f in reversed(history) if s <= want), frame)
 
-            persons = classify_persons(result)
-            confirmed = confirm_falls(persons, fall_streaks)
-            fall_alert = len(confirmed) > 0
-            fall_angle = next((p["angle"] for p in confirmed if p["angle"] is not None), None)
-            fall_ratio = max((p["ratio"] for p in confirmed), default=0.0)
+        annotated = annotate(shown, cam_id, ov)
+        ok, buf = cv2.imencode(
+            ".jpg", annotated, [cv2.IMWRITE_JPEG_QUALITY, config.JPEG_QUALITY])
+        if ok:
+            frame_store.set(cam_id, buf.tobytes())
 
-            # Compose overlays: grid → pose skeletons/boxes → fall boxes
-            annotated = draw_grid(frame.copy(), counts)
-            annotated = result.plot(img=annotated)
-            annotated = draw_fall_overlays(annotated, confirmed)
-
-            annotated = cv2.resize(annotated, config.FRAME_SIZE)
-            crowd_color = (0, 0, 255) if crowd_alert else (0, 255, 0)
-            fall_color = (0, 0, 255) if fall_alert else (0, 255, 0)
-            cv2.putText(annotated, f"Persons:{person_count} | Density:{max_density}",
-                        (20, 40), cv2.FONT_HERSHEY_SIMPLEX, 0.8, crowd_color, 2)
-            cv2.putText(annotated, "!! FALL DETECTED !!" if fall_alert else "OK",
-                        (20, 70), cv2.FONT_HERSHEY_SIMPLEX, 0.9, fall_color, 2)
-
-            # State transitions → DB rows + evidence frames
-            safe_ts = timestamp.replace(":", "-").replace(" ", "_")
-            if crowd_alert != crowd_state:
-                evidence = ""  # DB stores just the filename; the API
-                               # serves it at /evidence/{filename}
-                if crowd_alert:
-                    evidence = f"crowd_cam{cam_id}_{safe_ts}.jpg"
-                    cv2.imwrite(os.path.join(config.EVIDENCE_DIR, evidence), annotated)
-                    print(f"[{timestamp}] CAM-{cam_id:02d} CROWD ALERT — {person_count} persons")
-                elif crowd_state is not None:
-                    print(f"[{timestamp}] CAM-{cam_id:02d} crowd cleared")
-                if crowd_state is not None or crowd_alert:
-                    cur.execute(
-                        """INSERT INTO crowd_events
-                           (cam_id, timestamp, person_count, max_zone_density, is_alert, frame_path)
-                           VALUES (?, ?, ?, ?, ?, ?)""",
-                        (cam_id, timestamp, person_count, max_density,
-                         int(crowd_alert), evidence))
-                    conn.commit()
-                    alert_queue.put({
-                        "type": "gathering", "id": cur.lastrowid,
-                        "cam_id": cam_id, "timestamp": timestamp,
-                        "is_alert": int(crowd_alert),
-                        "person_count": person_count,
-                        "zone_density": max_density,
-                        "frame_path": evidence,
-                    })
-                crowd_state = crowd_alert
-
-            if fall_alert != fall_state:
-                evidence = ""
-                if fall_alert:
-                    evidence = f"fall_cam{cam_id}_{safe_ts}.jpg"
-                    cv2.imwrite(os.path.join(config.EVIDENCE_DIR, evidence), annotated)
-                    detail = (f"torso {fall_angle:.0f} deg" if fall_angle is not None
-                              else f"ratio {fall_ratio:.2f}")
-                    print(f"[{timestamp}] CAM-{cam_id:02d} FALL DETECTED ({detail})")
-                else:
-                    print(f"[{timestamp}] CAM-{cam_id:02d} fall cleared")
-                cur.execute(
-                    """INSERT INTO fall_events
-                       (cam_id, timestamp, is_fall, ratio, angle, frame_path)
-                       VALUES (?, ?, ?, ?, ?, ?)""",
-                    (cam_id, timestamp, int(fall_alert), round(fall_ratio, 2),
-                     round(fall_angle, 1) if fall_angle is not None else None,
-                     evidence))
-                conn.commit()
-                alert_queue.put({
-                    "type": "fall", "id": cur.lastrowid,
-                    "cam_id": cam_id, "timestamp": timestamp,
-                    "is_alert": int(fall_alert),
-                    "ratio": round(fall_ratio, 2),
-                    "angle": round(fall_angle, 1) if fall_angle is not None else None,
-                    "frame_path": evidence,
-                })
-                fall_state = fall_alert
-
-            # Periodic occupancy sample — the raw material for the
-            # analytics endpoints (trends + zone heatmap)
-            if time.time() - last_sample >= config.OCCUPANCY_SAMPLE_SECONDS:
-                last_sample = time.time()
-                zones_json = json.dumps(
-                    [[counts.get((r, c), 0) for c in range(config.GRID_COLS)]
-                     for r in range(config.GRID_ROWS)])
-                cur.execute(
-                    """INSERT INTO occupancy_samples
-                       (cam_id, timestamp, person_count, max_density, zones)
-                       VALUES (?, ?, ?, ?, ?)""",
-                    (cam_id, timestamp, person_count, max_density, zones_json))
-                conn.commit()
-
-            # Encode once; backend serves these bytes directly as MJPEG
-            ok, buf = cv2.imencode(
-                ".jpg", annotated, [cv2.IMWRITE_JPEG_QUALITY, config.JPEG_QUALITY])
-            if ok:
-                frame_store.set(cam_id, buf.tobytes())
-            live_stats.update(cam_id, person_count, max_density, latency_ms)
-
+        # Hold true source pace — the browser sees the video at real speed.
         sleep_for = frame_delay - (time.time() - t_start)
         if sleep_for > 0:
             time.sleep(sleep_for)
 
 
 # ================================================================
+# INFERENCE THREAD — one per camera. Owns the model, the DB and the alert
+# state machine. Runs as fast as it can without ever stalling the video.
+# ================================================================
+def inference_thread(cam_id, latest, overlay, live_stats):
+    model = YOLO(config.POSE_MODEL_PATH)  # own instance: thread safety
+    conn = sqlite3.connect(config.DB_PATH, timeout=30)  # wait out brief write locks
+    cur = conn.cursor()
+
+    crowd_state = None   # None = neutral until first detection
+    fall_state = False
+    fall_streaks = {}    # tracker ID → consecutive fallen detections
+    last_sample = 0.0    # last occupancy-sample write time
+    last_seq = -1
+    last_generation = 0
+    next_infer = 0.0
+
+    while True:
+        frame, seq, generation = latest.get()
+        if frame is None or seq == last_seq or time.time() < next_infer:
+            time.sleep(0.005)       # nothing new yet, or throttled
+            continue
+        last_seq = seq
+        next_infer = time.time() + config.DETECT_INTERVAL
+
+        if generation != last_generation:   # video file looped
+            last_generation = generation
+            # Tracker IDs restart with the file, so per-person fall streaks
+            # are meaningless across the seam. The crowd/fall alert states are
+            # deliberately NOT reset: a looping file is one continuous scene,
+            # and resetting them manufactured a brand new "incident" on every
+            # lap — a fresh alert every few seconds, each escalating on its
+            # own timer, which no operator could ever keep acknowledged.
+            fall_streaks = {}
+
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        # track() keeps per-person IDs stable across frames (ByteTrack),
+        # which lets fall confirmation follow individuals, not frames
+        t_infer = time.perf_counter()
+        result = model.track(frame, classes=[0], persist=True,
+                             conf=config.DETECTION_CONF_MIN, verbose=False)[0]
+        latency_ms = (time.perf_counter() - t_infer) * 1000
+        boxes = result.boxes
+        person_count = len(boxes)
+
+        counts, max_density = zone_densities(boxes, frame.shape)
+        # Hysteresis: it takes CROWD_MIN_PERSONS to raise an alert, but the
+        # count has to fall CROWD_CLEAR_MARGIN below that to clear it. A scene
+        # sitting on the threshold would otherwise flap in and out of alert
+        # every few seconds and log each flap as a fresh incident.
+        if crowd_state:
+            crowd_alert = person_count >= (config.CROWD_MIN_PERSONS
+                                           - config.CROWD_CLEAR_MARGIN)
+        else:
+            crowd_alert = person_count >= config.CROWD_MIN_PERSONS
+
+        persons = classify_persons(result)
+        confirmed = confirm_falls(persons, fall_streaks)
+        fall_alert = len(confirmed) > 0
+        fall_angle = next((p["angle"] for p in confirmed if p["angle"] is not None), None)
+        fall_ratio = max((p["ratio"] for p in confirmed), default=0.0)
+
+        # Publish for the capture thread to draw on every subsequent frame
+        overlay.set(result=result, counts=counts, confirmed=confirmed,
+                    person_count=person_count, max_density=max_density,
+                    crowd_alert=crowd_alert, fall_alert=fall_alert,
+                    seq=seq)
+        live_stats.update(cam_id, person_count, max_density, latency_ms)
+
+        # Evidence snapshots are rendered on demand, only when an alert fires
+        annotated = None
+
+        # State transitions → DB rows + evidence frames
+        safe_ts = timestamp.replace(":", "-").replace(" ", "_")
+        if crowd_alert != crowd_state:
+            evidence = ""  # DB stores just the filename; the API
+                           # serves it at /evidence/{filename}
+            if crowd_alert:
+                evidence = f"crowd_cam{cam_id}_{safe_ts}.jpg"
+                if annotated is None:
+                    annotated = annotate(frame, cam_id, overlay.get())
+                cv2.imwrite(
+                    os.path.join(config.EVIDENCE_DIR, evidence),
+                    stamp_evidence(annotated,
+                                   f"EVIDENCE  CROWD GATHERING  CAM-{cam_id:02d}  {timestamp}"))
+                print(f"[{timestamp}] CAM-{cam_id:02d} CROWD ALERT — {person_count} persons")
+            elif crowd_state is not None:
+                print(f"[{timestamp}] CAM-{cam_id:02d} crowd cleared")
+            if crowd_state is not None or crowd_alert:
+                cur.execute(
+                    """INSERT INTO crowd_events
+                       (cam_id, timestamp, person_count, max_zone_density, is_alert, frame_path)
+                       VALUES (?, ?, ?, ?, ?, ?)""",
+                    (cam_id, timestamp, person_count, max_density,
+                     int(crowd_alert), evidence))
+                conn.commit()
+                alert_queue.put({
+                    "type": "gathering", "id": cur.lastrowid,
+                    "cam_id": cam_id, "timestamp": timestamp,
+                    "is_alert": int(crowd_alert),
+                    "person_count": person_count,
+                    "zone_density": max_density,
+                    "frame_path": evidence,
+                })
+            crowd_state = crowd_alert
+
+        if fall_alert != fall_state:
+            evidence = ""
+            if fall_alert:
+                evidence = f"fall_cam{cam_id}_{safe_ts}.jpg"
+                if annotated is None:
+                    annotated = annotate(frame, cam_id, overlay.get())
+                cv2.imwrite(
+                    os.path.join(config.EVIDENCE_DIR, evidence),
+                    stamp_evidence(annotated,
+                                   f"EVIDENCE  FALL DETECTED  CAM-{cam_id:02d}  {timestamp}"))
+                detail = (f"torso {fall_angle:.0f} deg" if fall_angle is not None
+                          else f"ratio {fall_ratio:.2f}")
+                print(f"[{timestamp}] CAM-{cam_id:02d} FALL DETECTED ({detail})")
+            else:
+                print(f"[{timestamp}] CAM-{cam_id:02d} fall cleared")
+            cur.execute(
+                """INSERT INTO fall_events
+                   (cam_id, timestamp, is_fall, ratio, angle, frame_path)
+                   VALUES (?, ?, ?, ?, ?, ?)""",
+                (cam_id, timestamp, int(fall_alert), round(fall_ratio, 2),
+                 round(fall_angle, 1) if fall_angle is not None else None,
+                 evidence))
+            conn.commit()
+            alert_queue.put({
+                "type": "fall", "id": cur.lastrowid,
+                "cam_id": cam_id, "timestamp": timestamp,
+                "is_alert": int(fall_alert),
+                "ratio": round(fall_ratio, 2),
+                "angle": round(fall_angle, 1) if fall_angle is not None else None,
+                "frame_path": evidence,
+            })
+            fall_state = fall_alert
+
+        # Periodic occupancy sample — the raw material for the
+        # analytics endpoints (trends + zone heatmap)
+        if time.time() - last_sample >= config.OCCUPANCY_SAMPLE_SECONDS:
+            last_sample = time.time()
+            zones_json = json.dumps(
+                [[counts.get((r, c), 0) for c in range(config.GRID_COLS)]
+                 for r in range(config.GRID_ROWS)])
+            cur.execute(
+                """INSERT INTO occupancy_samples
+                   (cam_id, timestamp, person_count, max_density, zones)
+                   VALUES (?, ?, ?, ?, ?)""",
+                (cam_id, timestamp, person_count, max_density, zones_json))
+            conn.commit()
+
+
+# ================================================================
 # ENTRY POINT — called from the backend's lifespan handler
 # ================================================================
 def start_engine(frame_store, live_stats):
+    """Two threads per camera: one captures/draws/streams at the source frame
+    rate, one runs the model. They share a single-slot frame mailbox and an
+    overlay, so slow inference degrades detection freshness — never video
+    smoothness."""
     threads = []
     for cam_id, source in config.VIDEO_SOURCES.items():
-        t = threading.Thread(
-            target=camera_thread,
-            args=(cam_id, source, frame_store, live_stats),
-            daemon=True,
-        )
-        t.start()
-        threads.append(t)
-    print(f"Detection engine started with {len(threads)} camera(s).")
+        latest, overlay = LatestFrame(), Overlay()
+        for target, args in (
+            (capture_thread, (cam_id, source, frame_store, latest, overlay)),
+            (inference_thread, (cam_id, latest, overlay, live_stats)),
+        ):
+            t = threading.Thread(target=target, args=args, daemon=True)
+            t.start()
+            threads.append(t)
+    print(f"Detection engine started with {len(config.VIDEO_SOURCES)} camera(s), "
+          f"{len(threads)} threads.")
     return threads

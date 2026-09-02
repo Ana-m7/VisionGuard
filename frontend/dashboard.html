@@ -41,6 +41,26 @@ html,body{height:100%;font-family:var(--sans);background:var(--bg);color:var(--t
 .hdr-meta{font-family:var(--mono);font-size:11px;color:var(--text2)}
 .theme-btn{display:flex;align-items:center;gap:6px;padding:5px 11px;border-radius:6px;border:0.5px solid var(--border);background:var(--surf2);color:var(--text2);cursor:pointer;font-size:11px;font-family:var(--mono);transition:.2s}
 .theme-btn:hover{color:var(--text);border-color:var(--blue)}
+.user-chip{display:flex;align-items:center;gap:6px;font-family:var(--mono);font-size:11px;color:var(--text)}
+.user-role{font-size:9px;color:var(--text3);border:0.5px solid var(--border);border-radius:3px;padding:1px 6px}
+
+/* ── USER MANAGEMENT ── */
+.users-modal{width:520px}
+.utable{width:100%;border-collapse:collapse;font-size:11px;margin-bottom:14px}
+.utable th{font-family:var(--mono);font-size:9px;letter-spacing:.5px;color:var(--text2);text-transform:uppercase;text-align:left;padding:5px 6px;border-bottom:0.5px solid var(--border)}
+.utable td{padding:6px;border-bottom:0.5px solid var(--border);font-family:var(--mono);color:var(--text)}
+.utable tr:last-child td{border-bottom:none}
+.urole{font-size:9px;border-radius:3px;padding:1px 6px;border:0.5px solid var(--border)}
+.urole.admin{color:var(--blue);border-color:var(--blue)}
+.urole.guard{color:var(--green);border-color:var(--green)}
+.urm{background:none;border:0.5px solid var(--border);color:var(--text3);border-radius:3px;font-size:9px;font-family:var(--mono);padding:2px 7px;cursor:pointer}
+.urm:hover{border-color:var(--red);color:var(--red)}
+.uform{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.uform input,.uform select{width:100%;padding:7px 9px;border-radius:5px;border:0.5px solid var(--border);background:var(--surf2);color:var(--text);font-size:12px;font-family:var(--sans)}
+.uform input:focus,.uform select:focus{outline:none;border-color:var(--blue)}
+.uform .full{grid-column:1/-1}
+.uerr{display:none;grid-column:1/-1;font-size:10px;color:var(--red);font-family:var(--mono)}
+.uerr.show{display:block}
 
 /* ── INFO BAR ── */
 .info-bar{display:flex;align-items:center;justify-content:space-between;padding:7px 16px;background:var(--surf);border-bottom:0.5px solid var(--border);font-size:10px;color:var(--text3);font-family:var(--mono)}
@@ -85,7 +105,9 @@ html,body{height:100%;font-family:var(--sans);background:var(--bg);color:var(--t
 .cam-badge.fall{background:#f85149}
 .cam-foot{position:absolute;bottom:0;left:0;right:0;padding:3px 8px;background:rgba(0,0,0,.6);display:flex;justify-content:space-between;z-index:6}
 .cam-foot span{font-family:var(--mono);font-size:8px;color:#2a4a6a}
-.clear-btn{position:absolute;top:6px;left:6px;font-family:var(--mono);font-size:8px;padding:2px 7px;border-radius:3px;border:0.5px solid var(--border);background:rgba(0,0,0,.7);color:var(--text3);cursor:pointer;z-index:8;display:none;transition:.15s}
+/* Lives in the tile header, not over the video — it used to sit on top of
+   the in-frame status strip and obscure it. */
+.clear-btn{font-family:var(--mono);font-size:9px;padding:2px 8px;border-radius:3px;border:0.5px solid var(--border);background:var(--surf);color:var(--text3);cursor:pointer;display:none;transition:.15s}
 .clear-btn:hover{border-color:var(--green);color:var(--green)}
 .flash-overlay{position:absolute;inset:0;border-radius:7px;pointer-events:none;z-index:9;display:none}
 .cam.flashing .flash-overlay{display:block;animation:flashAnim .7s ease forwards}
@@ -106,6 +128,7 @@ html,body{height:100%;font-family:var(--sans);background:var(--bg);color:var(--t
 .evt-ic.gathering{background:var(--bg-amber);color:var(--amber)}
 .evt-ic.fall{background:var(--bg-red);color:var(--red)}
 .evt-ic.ok{background:var(--bg-green);color:var(--green)}
+.evt-ic.esc{background:var(--bg-orange);color:var(--orange)}
 .evt-body{flex:1;min-width:0}
 .evt-title{font-size:11px;font-weight:500;color:var(--text);margin-bottom:1px}
 .evt-sub{font-family:var(--mono);font-size:9px;color:var(--text2)}
@@ -158,11 +181,17 @@ html,body{height:100%;font-family:var(--sans);background:var(--bg);color:var(--t
 <header class="hdr">
   <div class="hdr-l">
     <span class="logo">VISIONGUARD</span>
-    <span class="live-badge"><span class="dot"></span>LIVE</span>
+    <span class="live-badge"><span class="dot"></span><span data-i18n="live">LIVE</span></span>
   </div>
   <div class="hdr-r">
     <span class="hdr-meta" id="clock">--:--:--</span>
+    <span class="user-chip" id="userChip" style="display:none">
+      <span id="userName"></span><span class="user-role" id="userRole"></span>
+    </span>
+    <button class="theme-btn" id="usersBtn" onclick="openUsers()" style="display:none" data-i18n="users">Users</button>
+    <button class="theme-btn" id="langBtn" onclick="toggleLang()">EN</button>
     <button class="theme-btn" id="themeBtn" onclick="toggleTheme()">Dark</button>
+    <button class="theme-btn" id="logoutBtn" onclick="signOut()" data-i18n="logout">Sign Out</button>
   </div>
 </header>
 
@@ -173,18 +202,18 @@ html,body{height:100%;font-family:var(--sans);background:var(--bg);color:var(--t
     <span style="color:var(--text3)" id="pollStatus"></span>
   </span>
   <span>
-    <button class="sim-btn" onclick="window.open(API_BASE + '/export/alerts.csv')">Export CSV</button>
-    <button class="sim-btn" onclick="clearAllAlerts()">Clear Alerts</button>
-    <button class="sim-btn" onclick="clearAlertDb()">Clear History</button>
+    <button class="sim-btn" onclick="window.open(API_BASE + '/export/alerts.csv')" data-i18n="exportCsv">Export CSV</button>
+    <button class="sim-btn" onclick="clearAllAlerts()" data-i18n="clearAlerts">Clear Alerts</button>
+    <button class="sim-btn" id="clearHistBtn" onclick="clearAlertDb()" data-i18n="clearHistory" style="display:none">Clear History</button>
   </span>
 </div>
 
 <!-- STATS -->
 <div class="stats">
-  <div class="stat"><div class="stat-lbl">CAMERAS LIVE</div><div class="stat-num g" id="cams-live">–</div></div>
-  <div class="stat"><div class="stat-lbl">ALERTS (LAST 60s)</div><div class="stat-num r" id="alert-count">0</div></div>
-  <div class="stat"><div class="stat-lbl">DETECTION RATE</div><div class="stat-num a" id="det-fps">0</div><div class="stat-sub" id="det-lat"></div></div>
-  <div class="stat"><div class="stat-lbl">PERSONS IN VIEW</div><div class="stat-num b" id="persons-now">0</div></div>
+  <div class="stat"><div class="stat-lbl" data-i18n="statCams">CAMERAS LIVE</div><div class="stat-num g" id="cams-live">–</div></div>
+  <div class="stat"><div class="stat-lbl" data-i18n="statAlerts">ALERTS (LAST 60s)</div><div class="stat-num r" id="alert-count">0</div></div>
+  <div class="stat"><div class="stat-lbl" data-i18n="statRate">DETECTION RATE</div><div class="stat-num a" id="det-fps">0</div><div class="stat-sub" id="det-lat"></div></div>
+  <div class="stat"><div class="stat-lbl" data-i18n="statPersons">PERSONS IN VIEW</div><div class="stat-num b" id="persons-now">0</div></div>
 </div>
 
 <!-- MAIN -->
@@ -196,88 +225,88 @@ html,body{height:100%;font-family:var(--sans);background:var(--bg);color:var(--t
     <!-- CAM-01 -->
     <div class="cam" id="cam-1">
       <div class="cam-head">
-        <span class="cam-id">CAM-01 · Main Entrance</span>
+        <span class="cam-id" data-i18n-cam="1">CAM-01 · </span>
         <div class="cam-controls">
+          <button class="clear-btn" id="clr-1" onclick="clearAlert(1)" data-i18n="clear">Clear</button>
           <span class="cam-st" id="st-1"><span class="st-dot"></span><span style="color:var(--green)">Normal</span></span>
         </div>
       </div>
       <div class="cam-screen">
-        <img id="stream-1" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:1;display:none;">
+        <img id="stream-1" style="position:absolute;inset:0;width:100%;height:100%;object-fit:contain;z-index:1;display:none;">
         <svg id="cam1-placeholder" class="cam-svg" viewBox="0 0 280 150" xmlns="http://www.w3.org/2000/svg">
           <rect width="280" height="150" fill="#070a0f"/>
-          <text x="140" y="75" fill="#2a4060" font-size="10" font-family="monospace" text-anchor="middle">Waiting for stream...</text>
+          <text x="140" y="75" fill="#2a4060" font-size="10" font-family="monospace" text-anchor="middle" data-i18n="waitingStream">Waiting for stream...</text>
           <text x="140" y="90" fill="#1a3050" font-size="7" font-family="monospace" text-anchor="middle">CAM-01 · MAIN-ENTRANCE</text>
         </svg>
         <div class="cam-badge" id="bdg-1"></div>
         <div class="flash-overlay" id="fl-1"></div>
         <div class="cam-foot"><span>CAM-01</span><span id="ts-1"></span></div>
-        <button class="clear-btn" id="clr-1" onclick="clearAlert(1)">Clear</button>
       </div>
     </div>
 
     <!-- CAM-02 -->
     <div class="cam" id="cam-2">
       <div class="cam-head">
-        <span class="cam-id">CAM-02 · Corridor B</span>
+        <span class="cam-id" data-i18n-cam="2">CAM-02 · </span>
         <div class="cam-controls">
+          <button class="clear-btn" id="clr-2" onclick="clearAlert(2)" data-i18n="clear">Clear</button>
           <span class="cam-st" id="st-2"><span class="st-dot"></span><span style="color:var(--green)">Normal</span></span>
         </div>
       </div>
       <div class="cam-screen">
-        <img id="stream-2" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:1;display:none;">
+        <img id="stream-2" style="position:absolute;inset:0;width:100%;height:100%;object-fit:contain;z-index:1;display:none;">
         <svg id="cam2-placeholder" class="cam-svg" viewBox="0 0 280 150" xmlns="http://www.w3.org/2000/svg">
           <rect width="280" height="150" fill="#070a0f"/>
-          <text x="140" y="75" fill="#2a4060" font-size="10" font-family="monospace" text-anchor="middle">Waiting for stream...</text>
+          <text x="140" y="75" fill="#2a4060" font-size="10" font-family="monospace" text-anchor="middle" data-i18n="waitingStream">Waiting for stream...</text>
           <text x="140" y="90" fill="#1a3050" font-size="7" font-family="monospace" text-anchor="middle">CAM-02 · CORRIDOR-B</text>
         </svg>
         <div class="cam-badge" id="bdg-2"></div>
         <div class="flash-overlay" id="fl-2"></div>
         <div class="cam-foot"><span>CAM-02</span><span id="ts-2"></span></div>
-        <button class="clear-btn" id="clr-2" onclick="clearAlert(2)">Clear</button>
       </div>
     </div>
 
     <!-- CAM-03 (local webcam) -->
     <div class="cam" id="cam-3">
       <div class="cam-head">
-        <span class="cam-id">CAM-03 · Webcam</span>
+        <span class="cam-id" data-i18n-cam="3">CAM-03 · </span>
         <div class="cam-controls">
+          <button class="clear-btn" id="clr-3" onclick="clearAlert(3)" data-i18n="clear">Clear</button>
           <span class="cam-st" id="st-3"><span class="st-dot"></span><span style="color:var(--green)">Normal</span></span>
         </div>
       </div>
       <div class="cam-screen">
-        <img id="stream-3" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:1;display:none;">
+        <img id="stream-3" style="position:absolute;inset:0;width:100%;height:100%;object-fit:contain;z-index:1;display:none;">
         <svg id="cam3-placeholder" class="cam-svg" viewBox="0 0 280 150" xmlns="http://www.w3.org/2000/svg">
           <rect width="280" height="150" fill="#070a0f"/>
-          <text x="140" y="75" fill="#2a4060" font-size="10" font-family="monospace" text-anchor="middle">Waiting for stream...</text>
-          <text x="140" y="90" fill="#1a3050" font-size="7" font-family="monospace" text-anchor="middle">CAM-03 · WEBCAM</text>
+          <text x="140" y="75" fill="#2a4060" font-size="10" font-family="monospace" text-anchor="middle" data-i18n="waitingStream">Waiting for stream...</text>
+          <text x="140" y="90" fill="#1a3050" font-size="7" font-family="monospace" text-anchor="middle">CAM-03 · FRONT-PORCH</text>
         </svg>
         <div class="cam-badge" id="bdg-3"></div>
         <div class="flash-overlay" id="fl-3"></div>
         <div class="cam-foot"><span>CAM-03</span><span id="ts-3"></span></div>
-        <button class="clear-btn" id="clr-3" onclick="clearAlert(3)">Clear</button>
       </div>
     </div>
 
     <!-- CAM-04 (reserved) -->
     <div class="cam" id="cam-4">
       <div class="cam-head">
-        <span class="cam-id">CAM-04 · Reserved</span>
+        <span class="cam-id" data-i18n-cam="4">CAM-04 · </span>
         <div class="cam-controls">
+          <button class="clear-btn" id="clr-4" onclick="clearAlert(4)" data-i18n="clear">Clear</button>
           <span class="cam-st" id="st-4"><span class="st-dot"></span><span style="color:var(--green)">Normal</span></span>
         </div>
       </div>
       <div class="cam-screen">
-        <img id="stream-4" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:1;display:none;">
+        <img id="stream-4" style="position:absolute;inset:0;width:100%;height:100%;object-fit:contain;z-index:1;display:none;">
         <svg id="cam4-placeholder" class="cam-svg" viewBox="0 0 280 150" xmlns="http://www.w3.org/2000/svg">
           <rect width="280" height="150" fill="#070a0f"/>
-          <text x="140" y="75" fill="#2a4060" font-size="10" font-family="monospace" text-anchor="middle">No feed configured</text>
-          <text x="140" y="90" fill="#1a3050" font-size="7" font-family="monospace" text-anchor="middle">CAM-04 · RESERVED</text>
+          <text x="140" y="75" fill="#2a4060" font-size="10" font-family="monospace" text-anchor="middle" data-i18n="waitingStream">Waiting for stream...</text>
+          <text x="140" y="90" fill="#1a3050" font-size="7" font-family="monospace" text-anchor="middle">CAM-04 · WEBCAM</text>
         </svg>
         <div class="cam-badge" id="bdg-4"></div>
         <div class="flash-overlay" id="fl-4"></div>
         <div class="cam-foot"><span>CAM-04</span><span id="ts-4"></span></div>
-        <button class="clear-btn" id="clr-4" onclick="clearAlert(4)">Clear</button>
       </div>
     </div>
 
@@ -288,13 +317,13 @@ html,body{height:100%;font-family:var(--sans);background:var(--bg);color:var(--t
 
     <!-- Event Log -->
     <div class="panel">
-      <div class="panel-title">Event Log</div>
+      <div class="panel-title" data-i18n="eventLog">Event Log</div>
       <div class="evt-list" id="evt-list">
         <div class="evt">
           <div class="evt-ic ok">OK</div>
           <div class="evt-body">
-            <div class="evt-title">System Initialized</div>
-            <div class="evt-sub">Monitoring service started</div>
+            <div class="evt-title" data-i18n="sysInit">System Initialized</div>
+            <div class="evt-sub" data-i18n="sysInitSub">Monitoring service started</div>
             <div class="evt-time" id="init-time"></div>
           </div>
         </div>
@@ -303,28 +332,28 @@ html,body{height:100%;font-family:var(--sans);background:var(--bg);color:var(--t
 
     <!-- Occupancy trend -->
     <div class="panel">
-      <div class="panel-title">Occupancy · avg persons/min (30m)</div>
+      <div class="panel-title" data-i18n="occupancyTitle">Occupancy · avg persons/min (30m)</div>
       <div class="chart-legend">
         <span class="chip"><span class="swatch" style="background:var(--c-cam1)"></span>CAM-01</span>
         <span class="chip"><span class="swatch" style="background:var(--c-cam2)"></span>CAM-02</span>
         <span class="chip"><span class="swatch" style="background:var(--c-cam3)"></span>CAM-03</span>
       </div>
-      <div class="chartbox" id="occ-chart"><div class="chart-empty">Collecting samples…</div></div>
+      <div class="chartbox" id="occ-chart"><div class="chart-empty" data-i18n="collecting">Collecting samples…</div></div>
     </div>
 
     <!-- Alerts per hour -->
     <div class="panel">
-      <div class="panel-title">Alerts per hour (12h)</div>
+      <div class="panel-title" data-i18n="alertsHourTitle">Alerts per hour (12h)</div>
       <div class="chart-legend">
-        <span class="chip"><span class="swatch" style="background:var(--amber)"></span>Gathering</span>
-        <span class="chip"><span class="swatch" style="background:var(--red)"></span>Fall</span>
+        <span class="chip"><span class="swatch" style="background:var(--amber)"></span><span data-i18n="crowdShort">Crowd</span></span>
+        <span class="chip"><span class="swatch" style="background:var(--red)"></span><span data-i18n="fallShort">Fall</span></span>
       </div>
-      <div class="chartbox" id="alerts-chart"><div class="chart-empty">No alerts yet</div></div>
+      <div class="chartbox" id="alerts-chart"><div class="chart-empty" data-i18n="noAlerts">No alerts yet</div></div>
     </div>
 
     <!-- Zone heatmap -->
     <div class="panel">
-      <div class="panel-title">Zone density heatmap (30m)</div>
+      <div class="panel-title" data-i18n="zoneTitle">Zone density heatmap (30m)</div>
       <div class="zone-grid" id="zone-chart"></div>
     </div>
 
@@ -333,19 +362,52 @@ html,body{height:100%;font-family:var(--sans);background:var(--bg);color:var(--t
 
 <div id="chart-tip"></div>
 
+<!-- USER MANAGEMENT (administrator only) -->
+<div class="backdrop" id="usersBackdrop" onclick="if(event.target.id==='usersBackdrop') closeUsers()">
+  <div class="modal users-modal">
+    <div class="modal-hdr">
+      <div class="modal-title"><span data-i18n="manageUsers">User Management</span></div>
+      <button class="mcl" onclick="closeUsers()">&times;</button>
+    </div>
+    <div class="modal-body">
+      <table class="utable">
+        <thead><tr>
+          <th data-i18n="uName">Full name</th><th data-i18n="uUsername">Username</th>
+          <th data-i18n="uRole">Role</th><th data-i18n="uContact">Contact</th><th></th>
+        </tr></thead>
+        <tbody id="userRows"></tbody>
+      </table>
+      <div class="panel-title" data-i18n="addUser">Add User</div>
+      <form class="uform" id="uform" autocomplete="off" onsubmit="return submitUser(event)">
+        <input id="u_full_name" placeholder="Full name">
+        <input id="u_telegram" placeholder="Telegram chat ID">
+        <input id="u_phone" placeholder="+919876543210 (optional)" class="full">
+        <input id="u_username" placeholder="Username" autocomplete="off" required>
+        <input id="u_password" type="password" placeholder="Password" autocomplete="new-password" required>
+        <select id="u_role">
+          <option value="guard" data-i18n="roleGuard">Security Guard</option>
+          <option value="admin" data-i18n="roleAdmin">Administrator</option>
+        </select>
+        <button class="mbtn mbtn-primary" type="submit" data-i18n="addUser">Add User</button>
+        <div class="uerr" id="uerr"></div>
+      </form>
+    </div>
+  </div>
+</div>
+
 <!-- MODAL -->
 <div class="backdrop" id="backdrop" onclick="backdropClick(event)">
   <div class="modal">
     <div class="modal-hdr">
       <div class="modal-title">
-        <span id="m-title">Alert</span>
+        <span id="m-title" data-i18n="alertDefault">Alert</span>
       </div>
       <button class="mcl" onclick="closeModal()">&times;</button>
     </div>
     <div class="modal-body" id="m-body"></div>
     <div class="modal-foot">
-      <button class="mbtn mbtn-primary" onclick="acknowledgeAlert()">Acknowledge</button>
-      <button class="mbtn mbtn-sec" onclick="closeModal()">Dismiss</button>
+      <button class="mbtn mbtn-primary" onclick="acknowledgeAlert()" data-i18n="acknowledge">Acknowledge</button>
+      <button class="mbtn mbtn-sec" onclick="closeModal()" data-i18n="dismiss">Dismiss</button>
     </div>
   </div>
 </div>
@@ -356,8 +418,12 @@ html,body{height:100%;font-family:var(--sans);background:var(--bg);color:var(--t
 // On error: show placeholder and schedule a reconnect in 3s.
 // On success: hide placeholder and show the live img.
 // This prevents the permanent "blank cam" bug when a stream hiccups.
-const API_BASE       = 'http://localhost:8000';
-const ACTIVE_CAMS    = new Set([1, 2, 3]);  // keep in sync with VIDEO_SOURCES in config.py
+// Served from the FastAPI process itself, so same-origin. Falls back to a
+// fixed address when the file is opened directly (file://).
+const API_BASE       = location.origin.startsWith('http')
+                         ? location.origin : 'http://localhost:8000';
+const ACTIVE_CAMS    = new Set([2, 4]);  // keep in sync with VIDEO_SOURCES in config.py
+                                      // (was [1, 2, 3] — restore when the video files are re-enabled)
 const STREAM_BASE    = API_BASE + '/video_feed/';
 const STREAM_RETRY_MS = 3000;
 const _retryTimers   = {};
@@ -401,40 +467,292 @@ function initStreams() {
   });
 }
 
-// ── CONFIG ──────────────────────────────────────────────────────
-const TYPES = {
-  gathering: {
-    label:'CROWD GATHERING', short:'Gathering',
-    color:'#e3b341', sev:'Medium',
-    desc:'Crowd density threshold exceeded in a zone'
+// ── LANGUAGE (EN / HI) ──────────────────────────────────────────
+// Guards on site read Hindi; supervisors and auditors read English. Static
+// markup is tagged with data-i18n and re-filled by applyLang(); strings that
+// JS builds go through t(). No library, no build step.
+const I18N = {
+  en: {
+    live:'LIVE', connecting:'Connecting…', connected:'Connected', offline:'Offline',
+    liveStatus:'Live', retrying:'Retrying…',
+    exportCsv:'Export CSV', clearAlerts:'Clear Alerts', clearHistory:'Clear History',
+    statCams:'CAMERAS LIVE', statAlerts:'ALERTS (LAST 60s)',
+    statRate:'DETECTION RATE', statPersons:'PERSONS IN VIEW',
+    normal:'Normal', clear:'Clear',
+    waitingStream:'Waiting for stream...', noFeed:'No feed configured',
+    eventLog:'Event Log',
+    occupancyTitle:'Occupancy · avg persons/min (30m)',
+    alertsHourTitle:'Alerts per hour (12h)',
+    zoneTitle:'Zone density heatmap (30m)',
+    collecting:'Collecting samples…', noAlerts:'No alerts yet',
+    sysInit:'System Initialized', sysInitSub:'Monitoring service started',
+    systemBoot:'System boot',
+    alertDefault:'Alert', acknowledge:'Acknowledge', dismiss:'Dismiss',
+    mCamera:'Camera', mDetection:'Detection', mTimestamp:'Timestamp',
+    mAcknowledged:'Acknowledged', ackShort:'Ack',
+    ackTitle:'Alert Acknowledged', ackBy:'Acknowledged by operator',
+    histCleared:'History Cleared', histClearedSub:'All alert records deleted',
+    crowdLabel:'CROWD GATHERING', fallLabel:'FALL DETECTED',
+    crowdShort:'Crowd', fallShort:'Fall',
+    clearedCrowd:'Crowd Cleared', clearedFall:'Fall Cleared',
+    confirmClear:'Clear all alert history from the database?',
+    clearFailed:'Failed to clear database. Is the backend running?',
+    viewEvidence:'View evidence snapshot', evidenceAlt:'Evidence snapshot',
+    zone:'Zone', personsSeen:'Persons seen', msFrame:'ms/frame',
+    theme:'Dark', themeAlt:'Light',
+    cam1:'Main Entrance', cam2:'Corridor B', cam3:'Front Porch', cam4:'Webcam',
+    logout:'Sign Out', users:'Users', manageUsers:'User Management',
+    addUser:'Add User', uName:'Full name', uUsername:'Username',
+    uPassword:'Password', uPhone:'Phone', uRole:'Role',
+    roleAdmin:'Administrator', roleGuard:'Security Guard',
+    remove:'Remove', confirmRemoveUser:'Remove this user account?',
+    escGuard:'Escalated to Security Guard', escAdmin:'Escalated to Administrator',
+    escNotified:'Notified', escNoContact:'No contact on file',
+    uContact:'Contact'
   },
-  fall: {
-    label:'FALL DETECTED', short:'Fall',
-    color:'#f85149', sev:'Critical',
-    desc:'Person fall detected — possible medical emergency'
+  hi: {
+    live:'लाइव', connecting:'कनेक्ट हो रहा है…', connected:'कनेक्टेड', offline:'ऑफ़लाइन',
+    liveStatus:'लाइव', retrying:'पुनः प्रयास…',
+    exportCsv:'CSV निर्यात', clearAlerts:'अलर्ट हटाएँ', clearHistory:'इतिहास हटाएँ',
+    statCams:'सक्रिय कैमरे', statAlerts:'अलर्ट (पिछले 60 सेकंड)',
+    statRate:'पहचान दर', statPersons:'दृश्य में व्यक्ति',
+    normal:'सामान्य', clear:'हटाएँ',
+    waitingStream:'स्ट्रीम की प्रतीक्षा...', noFeed:'कोई फ़ीड नहीं',
+    eventLog:'घटना लॉग',
+    occupancyTitle:'उपस्थिति · औसत व्यक्ति/मिनट (30 मि)',
+    alertsHourTitle:'प्रति घंटा अलर्ट (12 घं)',
+    zoneTitle:'ज़ोन घनत्व हीटमैप (30 मि)',
+    collecting:'नमूने एकत्र हो रहे हैं…', noAlerts:'अभी कोई अलर्ट नहीं',
+    sysInit:'सिस्टम प्रारंभ', sysInitSub:'निगरानी सेवा शुरू',
+    systemBoot:'सिस्टम बूट',
+    alertDefault:'अलर्ट', acknowledge:'स्वीकार करें', dismiss:'खारिज करें',
+    mCamera:'कैमरा', mDetection:'पहचान', mTimestamp:'समय',
+    mAcknowledged:'स्वीकृत', ackShort:'स्वीकृत',
+    ackTitle:'अलर्ट स्वीकृत', ackBy:'ऑपरेटर द्वारा स्वीकृत',
+    histCleared:'इतिहास हटाया गया', histClearedSub:'सभी अलर्ट रिकॉर्ड हटाए गए',
+    crowdLabel:'भीड़ जमा', fallLabel:'गिरना पाया गया',
+    crowdShort:'भीड़', fallShort:'गिरना',
+    clearedCrowd:'भीड़ समाप्त', clearedFall:'गिरना समाप्त',
+    confirmClear:'क्या डेटाबेस से सभी अलर्ट इतिहास हटाएँ?',
+    clearFailed:'डेटाबेस साफ़ नहीं हो सका। क्या बैकएंड चल रहा है?',
+    viewEvidence:'साक्ष्य चित्र देखें', evidenceAlt:'साक्ष्य चित्र',
+    zone:'ज़ोन', personsSeen:'देखे गए व्यक्ति', msFrame:'मि.से/फ़्रेम',
+    theme:'डार्क', themeAlt:'लाइट',
+    cam1:'मुख्य द्वार', cam2:'गलियारा B', cam3:'बरामदा', cam4:'वेबकैम',
+    logout:'साइन आउट', users:'उपयोगकर्ता', manageUsers:'उपयोगकर्ता प्रबंधन',
+    addUser:'उपयोगकर्ता जोड़ें', uName:'पूरा नाम', uUsername:'उपयोगकर्ता नाम',
+    uPassword:'पासवर्ड', uPhone:'फ़ोन', uRole:'भूमिका',
+    roleAdmin:'प्रशासक', roleGuard:'सुरक्षा गार्ड',
+    remove:'हटाएँ', confirmRemoveUser:'क्या यह खाता हटाएँ?',
+    escGuard:'सुरक्षा गार्ड को भेजा गया', escAdmin:'प्रशासक को भेजा गया',
+    escNotified:'सूचित', escNoContact:'कोई संपर्क दर्ज नहीं',
+    uContact:'संपर्क'
   }
 };
 
-const CAMS = {
-  1:{ name:'CAM-01', loc:'Main Entrance' },
-  2:{ name:'CAM-02', loc:'Corridor B' },
-  3:{ name:'CAM-03', loc:'Webcam' },
-  4:{ name:'CAM-04', loc:'Reserved' },
+let lang = 'en';
+// Missing keys fall back to English rather than rendering a raw key.
+function t(k){ return (I18N[lang] && I18N[lang][k]) || I18N.en[k] || k; }
+
+// ── SESSION ──────────────────────────────────────────────────────
+// The session lives in an HttpOnly cookie the browser attaches to every
+// request (including the MJPEG <img> tags), so there is no token to manage
+// here. If the session lapses the server answers 401 and we return to login.
+let currentUser = null;
+
+function goToLogin(){ location.href = '/login'; }
+
+// Wrapper used by every call: turns an expired session into a redirect
+// instead of a silent stream of failures.
+async function api(path, opts){
+  const res = await fetch(API_BASE + path, opts);
+  if(res.status === 401){ goToLogin(); throw new Error('signed out'); }
+  return res;
+}
+
+async function loadSession(){
+  try {
+    const res = await fetch(API_BASE + '/auth/me');
+    if(!res.ok){ goToLogin(); return false; }
+    currentUser = await res.json();
+  } catch(e){ goToLogin(); return false; }
+  const chip = document.getElementById('userChip');
+  document.getElementById('userName').textContent =
+    currentUser.full_name || currentUser.username;
+  document.getElementById('userRole').textContent =
+    t(currentUser.role === 'admin' ? 'roleAdmin' : 'roleGuard');
+  chip.style.display = 'flex';
+  // User management is administrator-only — the server enforces it too.
+  if(currentUser.role === 'admin'){
+    document.getElementById('usersBtn').style.display = 'flex';
+    // Clearing history is destructive and administrator-only. Hidden rather
+    // than shown-and-refused; the server enforces it regardless.
+    document.getElementById('clearHistBtn').style.display = 'inline-block';
+  }
+  return true;
+}
+
+async function signOut(){
+  try { await fetch(API_BASE + '/auth/logout', { method:'POST' }); } catch(e) {}
+  goToLogin();
+}
+
+// ── USER MANAGEMENT (administrator only) ─────────────────────────
+async function openUsers(){
+  document.getElementById('usersBackdrop').classList.add('open');
+  await refreshUsers();
+}
+function closeUsers(){
+  document.getElementById('usersBackdrop').classList.remove('open');
+  document.getElementById('uerr').classList.remove('show');
+}
+
+async function refreshUsers(){
+  const tbody = document.getElementById('userRows');
+  try {
+    const rows = await (await api('/users')).json();
+    tbody.innerHTML = rows.map(u => `
+      <tr>
+        <td>${esc(u.full_name || '—')}</td>
+        <td>${esc(u.username)}</td>
+        <td><span class="urole ${u.role}">${t(u.role === 'admin' ? 'roleAdmin' : 'roleGuard')}</span></td>
+        <td>${esc(u.telegram_chat_id || u.phone || '—')}</td>
+        <td>${u.id === currentUser.id ? ''
+            : `<button class="urm" onclick="removeUser(${u.id})">${t('remove')}</button>`}</td>
+      </tr>`).join('');
+  } catch(e){ /* redirected on 401 */ }
+}
+
+// User-supplied text goes through innerHTML above, so escape it
+function esc(s){
+  return String(s).replace(/[&<>"']/g,
+    c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+async function submitUser(ev){
+  ev.preventDefault();
+  const err = document.getElementById('uerr');
+  err.classList.remove('show');
+  const body = {
+    full_name: document.getElementById('u_full_name').value.trim(),
+    phone:     document.getElementById('u_phone').value.trim(),
+    telegram_chat_id: document.getElementById('u_telegram').value.trim(),
+    username:  document.getElementById('u_username').value.trim(),
+    password:  document.getElementById('u_password').value,
+    role:      document.getElementById('u_role').value,
+  };
+  try {
+    const res = await api('/users', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify(body)
+    });
+    if(!res.ok){
+      const d = await res.json().catch(()=>({}));
+      err.textContent = d.detail || 'Could not create user';
+      err.classList.add('show');
+      return false;
+    }
+    document.getElementById('uform').reset();
+    await refreshUsers();
+  } catch(e){ /* redirected on 401 */ }
+  return false;
+}
+
+async function removeUser(id){
+  if(!confirm(t('confirmRemoveUser'))) return;
+  try {
+    await api('/users/' + id, { method:'DELETE' });
+    await refreshUsers();
+  } catch(e){ /* redirected on 401 */ }
+}
+
+function toggleLang(){
+  lang = (lang === 'en') ? 'hi' : 'en';
+  try { localStorage.setItem('vg_lang', lang); } catch(e) {}
+  applyLang();
+}
+
+// Re-fill every translatable string currently on screen. Called on load and
+// on every switch, so nothing is left in the previous language.
+function applyLang(){
+  document.documentElement.setAttribute('lang', lang);
+  const btn = document.getElementById('langBtn');
+  if(btn) btn.textContent = (lang === 'en') ? 'EN' : 'हिं';
+
+  document.querySelectorAll('[data-i18n]').forEach(el => {
+    el.textContent = t(el.getAttribute('data-i18n'));
+  });
+  // "CAM-01 · Main Entrance" — identifier stays, location translates
+  document.querySelectorAll('[data-i18n-cam]').forEach(el => {
+    const c = CAMS[el.getAttribute('data-i18n-cam')];
+    if(c) el.textContent = `${c.name} · ${c.loc}`;
+  });
+  // "Ack: 14:22:07" — the time is carried on the attribute
+  document.querySelectorAll('[data-i18n-ack]').forEach(el => {
+    el.textContent = `${t('ackShort')}: ${el.getAttribute('data-i18n-ack')}`;
+  });
+  document.querySelectorAll('[data-i18n-title]').forEach(el => {
+    el.title = t(el.getAttribute('data-i18n-title'));
+  });
+
+  // Re-render the parts JS owns
+  if(currentUser){
+    document.getElementById('userRole').textContent =
+      t(currentUser.role === 'admin' ? 'roleAdmin' : 'roleGuard');
+    if(document.getElementById('usersBackdrop').classList.contains('open')) refreshUsers();
+  }
+  [1,2,3,4].forEach(applyCamVisualState);
+  setBackendStatus(_lastBackendStatus);
+  renderLatency();
+  renderAnalytics();
+  const th = document.getElementById('themeBtn');
+  if(th) th.textContent = isDark ? t('theme') : t('themeAlt');
+}
+
+// ── CONFIG ──────────────────────────────────────────────────────
+// One vocabulary for each detector, used by the badge, tile status, event
+// log and modal alike. `gathering` stays the wire/DB identifier (it keys the
+// API's `type` param); `label`/`short` are the only strings a user ever sees,
+// and they match the CROWD / FALL wording burned into the video HUD.
+// Getters resolve through t() so every existing `T.label` / `T.short` call
+// site picks up the current language with no change.
+const TYPES = {
+  gathering: { get label(){ return t('crowdLabel'); },
+               get short(){ return t('crowdShort'); }, color:'#e3b341' },
+  fall:      { get label(){ return t('fallLabel');  },
+               get short(){ return t('fallShort');  }, color:'#f85149' }
 };
+
+// Location names translate; the CAM-NN identifier never does.
+const CAMS = {
+  1:{ name:'CAM-01', get loc(){ return t('cam1'); } },
+  2:{ name:'CAM-02', get loc(){ return t('cam2'); } },
+  3:{ name:'CAM-03', get loc(){ return t('cam3'); } },
+  4:{ name:'CAM-04', get loc(){ return t('cam4'); } },
+};
+
+// Alert severity — higher wins when a camera has more than one active alert
+// (a fall outranks a gathering for the border colour, badge and status text).
+const SEVERITY = { fall: 2, gathering: 1 };
 
 // ── STATE ────────────────────────────────────────────────────────
 let isDark = true;
+// key "<cam>:<type>" → true. Independent per camera AND per alert type, so a
+// gathering on CAM-01 and a fall on CAM-02 (or on the same camera) coexist
+// without either clobbering the other.
 let activeAlerts = {};
 let currentModal = null;
 
-// Track last seen DB IDs so we don't re-fire the same alert
+// Track last seen DB IDs so we don't re-fire the same alert. IDs are globally
+// monotonic per table, so one counter per detector covers every camera.
 let lastCrowdId = 0;
 let lastFallId  = 0;
 
-// Suppress new alerts if the last one of the same type fired within this window.
-// Guards against duplicate DB rows written in quick succession for the same event.
+// Suppress a re-fire only if the SAME type on the SAME camera fired within this
+// window — guards against duplicate DB rows for one event without ever letting
+// one camera's alert swallow another camera's.
 const ALERT_DEDUP_MS = 3000;
-let lastAlertFiredAt = {}; // type → timestamp
+let lastAlertFiredAt = {}; // "<type>:<cam>" → timestamp
 
 // Track last displayed stat values so we only animate on real changes
 let lastAlertCount = -1;
@@ -445,14 +763,58 @@ let lastCamsLive = '';
 let backendConnected = false;
 const POLL_INTERVAL_MS = 3000;
 const MODAL_COOLDOWN_MS = 30000;
-let lastModalAt = {};
+let lastModalAt = {};   // "<cam>:<type>" → timestamp — cooldown is per camera+type
+let modalQueue = [];    // alerts that arrived while a modal was open, shown in turn
 let pollInFlight = false;
 
+// ── PER-CAMERA ALERT STATE HELPERS ───────────────────────────────
+// The camera tile's border, badge and status line are a function of every
+// alert type currently active on THAT camera — never a single global "state".
+function camAlertTypes(cam){
+  const prefix = cam + ':';
+  return Object.keys(activeAlerts)
+    .filter(k => activeAlerts[k] && k.startsWith(prefix))
+    .map(k => k.slice(prefix.length));
+}
+
+function dominantType(cam){
+  return camAlertTypes(cam).sort((a, b) => SEVERITY[b] - SEVERITY[a])[0] || null;
+}
+
+// Recompute one camera tile's visuals from its own active alerts only.
+function applyCamVisualState(cam){
+  const type  = dominantType(cam);
+  const camEl = document.getElementById('cam-' + cam);
+  const bdg   = document.getElementById('bdg-' + cam);
+  const clr   = document.getElementById('clr-' + cam);
+  const stEl  = document.getElementById('st-' + cam);
+  if(type){
+    const T = TYPES[type];
+    if(camEl) camEl.className = 'cam a-' + type;
+    if(bdg){ bdg.className = 'cam-badge ' + type; bdg.textContent = T.short.toUpperCase(); bdg.style.display = 'block'; }
+    if(clr) clr.style.display = 'block';
+    const stColors = {gathering:'var(--amber)', fall:'var(--red)'};
+    if(stEl) stEl.innerHTML = `<span class="st-dot" style="background:${stColors[type]}"></span><span style="color:${stColors[type]}">${T.short}</span>`;
+  } else {
+    if(camEl) camEl.className = 'cam';
+    if(bdg) bdg.style.display = 'none';
+    if(clr) clr.style.display = 'none';
+    if(stEl) stEl.innerHTML = ACTIVE_CAMS.has(cam)
+      ? `<span class="st-dot"></span><span style="color:var(--green)">${t('normal')}</span>`
+      : `<span class="st-dot" style="background:var(--text3)"></span><span style="color:var(--text3)">${t('offline')}</span>`;
+  }
+}
+
 // ── INIT ─────────────────────────────────────────────────────────
-window.addEventListener('DOMContentLoaded', () => {
+window.addEventListener('DOMContentLoaded', async () => {
+  try { lang = localStorage.getItem('vg_lang') === 'hi' ? 'hi' : 'en'; } catch(e) {}
+  applyLang();   // before anything renders, so nothing is built in the wrong language
+  // Confirm the session before opening streams or sockets — otherwise a
+  // lapsed session produces a wall of failed requests instead of a redirect.
+  if(!await loadSession()) return;
   const now = new Date();
   const el = document.getElementById('init-time');
-  if (el) el.textContent = p(now.getHours())+':'+p(now.getMinutes())+' · System boot';
+  if (el) el.textContent = p(now.getHours())+':'+p(now.getMinutes())+' · '+t('systemBoot');
   lastCrowdId = parseInt(localStorage.getItem('vg_last_crowd_id') || '0', 10) || 0;
   lastFallId = parseInt(localStorage.getItem('vg_last_fall_id') || '0', 10) || 0;
   // lastModalAt intentionally NOT restored from localStorage — stale cooldowns
@@ -488,12 +850,17 @@ function ts(){ const n=new Date(); return p(n.getHours())+':'+p(n.getMinutes())+
 function updateClock(){ const el=document.getElementById('clock'); if(el) el.textContent=ts(); }
 function updateTimestamps(){ [1,2,3,4].forEach(i=>{ const el=document.getElementById('ts-'+i); if(el) el.textContent=ts(); }); }
 
-function clearAllAlerts(){
+// Clearing is not cosmetic: it acknowledges the outstanding alerts on the
+// server too. Without that the rows stay unacknowledged, keep climbing the
+// escalation ladder, and keep sending notifications for alerts the operator
+// has visibly dismissed.
+async function clearAllAlerts(){
   [1,2,3,4].forEach(i => clearAlert(i));
+  try { await api('/alerts/ack_all', { method:'POST' }); } catch(e) {}
 }
 
 async function clearAlertDb(){
-  if(!confirm('Clear all alert history from the database?')) return;
+  if(!confirm(t('confirmClear'))) return;
   try {
     const res = await fetch(API_BASE + '/alerts/clear', { method: 'POST' });
     if(!res.ok) throw new Error('Clear failed');
@@ -510,14 +877,14 @@ async function clearAlertDb(){
       <div class="evt">
         <div class="evt-ic ok">OK</div>
         <div class="evt-body">
-          <div class="evt-title">History Cleared</div>
-          <div class="evt-sub">All alert records deleted</div>
+          <div class="evt-title" data-i18n="histCleared">${t('histCleared')}</div>
+          <div class="evt-sub" data-i18n="histClearedSub">${t('histClearedSub')}</div>
           <div class="evt-time">${ts()}</div>
         </div>
       </div>`;
     fetchAnalytics();  // charts re-aggregate from the empty tables
   } catch (e) {
-    alert('Failed to clear database. Is the backend running?');
+    alert(t('clearFailed'));
   }
 }
 
@@ -543,29 +910,17 @@ function updateStatCard(id, newVal, lastVal){
 // ── TRIGGER ALERT ────────────────────────────────────────────────
 // row: the DB row (carries id + evidence filename for ack/gallery)
 function triggerAlert(cam, type, row){
-  if(activeAlerts[cam]) return;
-  activeAlerts[cam] = type;
+  const key = cam + ':' + type;
+  if(activeAlerts[key]) return;          // this camera is already showing this type
+  activeAlerts[key] = true;
   const T = TYPES[type], C = CAMS[cam];
 
-  flashCam(cam, T.color);
-
-  const bdg = document.getElementById('bdg-'+cam);
-  if(bdg){ bdg.className='cam-badge '+type; bdg.textContent=T.short.toUpperCase(); bdg.style.display='block'; }
-
-  const camEl = document.getElementById('cam-'+cam);
-  if(camEl){ camEl.className='cam a-'+type; }
-
-  const stEl = document.getElementById('st-'+cam);
-  const stColors={gathering:'var(--amber)',fall:'var(--red)'};
-  const stLabels={gathering:'Gathering',fall:'Fall'};
-  if(stEl) stEl.innerHTML=`<span class="st-dot" style="background:${stColors[type]}"></span><span style="color:${stColors[type]}">${stLabels[type]}</span>`;
-
-  const clrBtn = document.getElementById('clr-'+cam);
-  if(clrBtn) clrBtn.style.display='block';
+  flashCam(cam, T.color);                // flash colour = the alert that just fired
+  applyCamVisualState(cam);              // border/badge/status = most severe active type
 
   const alertTime = ts();
   addToLog(cam, type, T, C, alertTime, row);
-  setTimeout(()=>showModal(cam, type, T, C, alertTime, row), 700);
+  setTimeout(()=>presentModal(cam, type, T, C, alertTime, row, false), 700);
 }
 
 // ── FLASH ────────────────────────────────────────────────────────
@@ -583,15 +938,19 @@ function flashCam(cam, color){
 }
 
 // ── CLEAR ALERT ──────────────────────────────────────────────────
-function clearAlert(cam){
-  delete activeAlerts[cam];
-  const bdg=document.getElementById('bdg-'+cam); if(bdg) bdg.style.display='none';
-  const clr=document.getElementById('clr-'+cam); if(clr) clr.style.display='none';
-  const c=document.getElementById('cam-'+cam); if(c) c.className='cam';
-  const st=document.getElementById('st-'+cam);
-  if(st) st.innerHTML = ACTIVE_CAMS.has(cam)
-    ? `<span class="st-dot"></span><span style="color:var(--green)">Normal</span>`
-    : `<span class="st-dot" style="background:var(--text3)"></span><span style="color:var(--text3)">Offline</span>`;
+// clearAlert(cam)        → clear every alert type on that camera
+// clearAlert(cam, type)  → clear just that one type, leaving any other
+//                          active alert on the same camera untouched
+function clearAlert(cam, type){
+  if(type){
+    delete activeAlerts[cam + ':' + type];
+  } else {
+    const prefix = cam + ':';
+    Object.keys(activeAlerts)
+      .filter(k => k.startsWith(prefix))
+      .forEach(k => delete activeAlerts[k]);
+  }
+  applyCamVisualState(cam);
 }
 
 // ── EVENT LOG ────────────────────────────────────────────────────
@@ -601,56 +960,115 @@ const ICONS={gathering:'CG',fall:'FD',ok:'OK'};
 function addToLog(cam, type, T, C, alertTime, row){
   const list=document.getElementById('evt-list'); if(!list) return;
   const timeStr = alertTime || ts();
-  const ackLine = row && row.acknowledged_at
-    ? `<div class="evt-sub" style="color:var(--green)">Ack: ${row.acknowledged_at.split(' ')[1] || row.acknowledged_at}</div>` : '';
+  const ackAt = row && row.acknowledged_at
+    ? (row.acknowledged_at.split(' ')[1] || row.acknowledged_at) : null;
+  const ackLine = ackAt
+    ? `<div class="evt-sub" style="color:var(--green)" data-i18n-ack="${ackAt}">${t('ackShort')}: ${ackAt}</div>` : '';
+  const labelKey = type === 'fall' ? 'fallLabel' : 'crowdLabel';
   const evt=document.createElement('div');
   evt.className='evt new';
   evt.innerHTML=`
     <div class="evt-ic ${type}">${ICONS[type]||'!'}</div>
     <div class="evt-body">
-      <div class="evt-title" style="color:${T.color}">${T.label}</div>
-      <div class="evt-sub">${C.name} · ${C.loc}</div>
+      <div class="evt-title" style="color:${T.color}" data-i18n="${labelKey}">${T.label}</div>
+      <div class="evt-sub" data-i18n-cam="${cam}">${C.name} · ${C.loc}</div>
       ${ackLine}
       <div class="evt-time">${timeStr}</div>
     </div>`;
   // entries with an evidence snapshot open it in the modal on click
   if(row && row.frame_path){
     evt.style.cursor = 'pointer';
-    evt.title = 'View evidence snapshot';
-    evt.onclick = () => showModal(cam, type, T, C,
-                                  row.timestamp || timeStr, row, true);
+    evt.title = t('viewEvidence');
+    evt.setAttribute('data-i18n-title', 'viewEvidence');
+    evt.onclick = () => presentModal(cam, type, T, C,
+                                     row.timestamp || timeStr, row, true);
   }
   list.insertBefore(evt, list.firstChild);
+  trimLog(list);
+}
+
+// Closing entry for an alert the detector itself resolved, so the log reads
+// as a complete incident trail: raised → (acknowledged) → cleared.
+function addClearedToLog(cam, type){
+  const list=document.getElementById('evt-list'); if(!list) return;
+  const C=CAMS[cam], T=TYPES[type]; if(!C||!T) return;
+  const key = type === 'fall' ? 'clearedFall' : 'clearedCrowd';
+  const evt=document.createElement('div');
+  evt.className='evt new';
+  evt.innerHTML=`
+    <div class="evt-ic ok">OK</div>
+    <div class="evt-body">
+      <div class="evt-title" data-i18n="${key}">${t(key)}</div>
+      <div class="evt-sub" data-i18n-cam="${cam}">${C.name} · ${C.loc}</div>
+      <div class="evt-time">${ts()}</div>
+    </div>`;
+  list.insertBefore(evt, list.firstChild);
+  trimLog(list);
+}
+
+// ── ESCALATION ───────────────────────────────────────────────────
+// An unacknowledged alert climbs the ladder on the server; this renders the
+// rungs. The camera keeps its alert state — escalation reports on it rather
+// than replacing it.
+function handleEscalation(ev){
+  // Deliberately not written to the event log: the log is the operator's
+  // record of what the cameras saw, and escalations are about who was
+  // contacted. Mixing them buried the detections. The camera pulses orange
+  // so the operator still sees attention has moved on, and the full trail
+  // lives on the alert row (escalation_level / escalated_at) and in the
+  // notification itself.
+  if(CAMS[ev.cam_id]) flashCam(ev.cam_id, '#ff7b54');
+  console.info('[VisionGuard] escalation level', ev.level,
+               'cam', ev.cam_id, 'notified', ev.notified);
+}
+
+// Keep the log bounded — a long demo run would otherwise grow the DOM forever.
+const MAX_LOG_ENTRIES = 100;
+function trimLog(list){
+  while(list.children.length > MAX_LOG_ENTRIES) list.removeChild(list.lastChild);
 }
 
 // ── MODAL ────────────────────────────────────────────────────────
-// row: DB row for this alert (id, frame_path, acknowledged_at).
-// fromLog: true when opened by clicking a log entry — bypasses the
-// cooldown that only applies to automatic popups.
-function showModal(cam, type, T, C, timestamp, row, fromLog){
-  // Don't open a second modal if one is already visible
-  if(document.getElementById('backdrop').classList.contains('open')) return;
-  if(!fromLog){
-    const now = Date.now();
-    if(lastModalAt[type] && (now - lastModalAt[type]) < MODAL_COOLDOWN_MS) return;
-    lastModalAt[type] = now;
+// presentModal decides WHETHER to show; showModal does the rendering.
+//   fromLog=true  → a manual click on a log entry: always wins, replaces
+//                   whatever is on screen, ignores the cooldown.
+//   fromLog=false → an automatic popup: per camera+type cooldown, and if a
+//                   modal is already open the alert is QUEUED (never dropped)
+//                   and shown when the current one closes.
+function presentModal(cam, type, T, C, timestamp, row, fromLog){
+  if(fromLog){ showModal(cam, type, T, C, timestamp, row); return; }
+  const key = cam + ':' + type, now = Date.now();
+  if(lastModalAt[key] && (now - lastModalAt[key]) < MODAL_COOLDOWN_MS) return;
+  lastModalAt[key] = now;
+  if(document.getElementById('backdrop').classList.contains('open')){
+    modalQueue.push([cam, type, T, C, timestamp, row]);
+    return;
   }
+  showModal(cam, type, T, C, timestamp, row);
+}
+
+// row: DB row for this alert (id, frame_path, acknowledged_at).
+function showModal(cam, type, T, C, timestamp, row){
   currentModal={cam, type, id: row ? row.id : null};
 
-  document.getElementById('m-title').textContent = T.label;
+  // retag the title so a language switch re-translates it in place
+  const mTitle = document.getElementById('m-title');
+  mTitle.setAttribute('data-i18n', type === 'fall' ? 'fallLabel' : 'crowdLabel');
+  mTitle.textContent = T.label;
 
   const evidence = row && row.frame_path
-    ? `<img src="${API_BASE}/evidence/${row.frame_path}" alt="Evidence snapshot"
+    ? `<img src="${API_BASE}/evidence/${row.frame_path}" alt="${t('evidenceAlt')}"
          style="width:100%;border-radius:6px;margin-bottom:10px;display:block"
          onerror="this.style.display='none'">` : '';
   const ackRow = row && row.acknowledged_at
-    ? `<div class="modal-row"><span class="mkey">Acknowledged</span><span class="mval2" style="color:var(--green)">${row.acknowledged_at}</span></div>` : '';
+    ? `<div class="modal-row"><span class="mkey" data-i18n="mAcknowledged">${t('mAcknowledged')}</span><span class="mval2" style="color:var(--green)">${row.acknowledged_at}</span></div>` : '';
+  const labelKey = type === 'fall' ? 'fallLabel' : 'crowdLabel';
 
   document.getElementById('m-body').innerHTML = `
     ${evidence}
-    <div class="modal-row"><span class="mkey">Camera</span><span class="mval2">${C.name} · ${C.loc}</span></div>
-    <div class="modal-row"><span class="mkey">Detection</span><span class="mval2" style="color:${T.color}">${T.label}</span></div>
-    <div class="modal-row"><span class="mkey">Timestamp</span><span class="mval2">${timestamp || ts()}</span></div>
+    <div class="modal-row"><span class="mkey" data-i18n="mCamera">${t('mCamera')}</span><span class="mval2" data-i18n-cam="${cam}">${C.name} · ${C.loc}</span></div>
+    <div class="modal-row"><span class="mkey" data-i18n="mDetection">${t('mDetection')}</span><span class="mval2" style="color:${T.color}" data-i18n="${labelKey}">${T.label}</span></div>
+    <div class="modal-row"><span class="mkey" data-i18n="mTimestamp">${t('mTimestamp')}</span><span class="mval2">${timestamp || ts()}</span></div>
     ${ackRow}`;
 
   _modalOpenedAt = Date.now();
@@ -660,7 +1078,15 @@ function showModal(cam, type, T, C, timestamp, row, fromLog){
 let _modalOpenedAt = 0;
 const MODAL_GRACE_MS = 1500; // backdrop click can't close modal for this long after it opens
 
-function closeModal(){ document.getElementById('backdrop').classList.remove('open'); currentModal=null; }
+function closeModal(){
+  document.getElementById('backdrop').classList.remove('open');
+  currentModal=null;
+  // show the next queued alert, if any, after a short visible gap
+  if(modalQueue.length){
+    const next = modalQueue.shift();
+    setTimeout(() => { if(!document.getElementById('backdrop').classList.contains('open')) showModal(...next); }, 300);
+  }
+}
 function backdropClick(e){
   if(e.target.id==='backdrop' && Date.now() - _modalOpenedAt > MODAL_GRACE_MS) closeModal();
 }
@@ -672,7 +1098,8 @@ function acknowledgeAlert(){
       fetch(`${API_BASE}/alerts/ack?type=${currentModal.type}&id=${currentModal.id}`,
             { method: 'POST' }).catch(() => {});
     }
-    clearAlert(currentModal.cam);
+    clearAlert(currentModal.cam, currentModal.type);  // only this alert — a
+    // concurrent alert of another type on the same camera stays active
     const list=document.getElementById('evt-list');
     if(list){
       const evt=document.createElement('div');
@@ -680,9 +1107,9 @@ function acknowledgeAlert(){
       evt.innerHTML=`
         <div class="evt-ic ok">OK</div>
         <div class="evt-body">
-          <div class="evt-title">Alert Acknowledged</div>
-          <div class="evt-sub">${CAMS[currentModal.cam].name} · ${CAMS[currentModal.cam].loc}</div>
-          <div class="evt-sub">Acknowledged by operator</div>
+          <div class="evt-title" data-i18n="ackTitle">${t('ackTitle')}</div>
+          <div class="evt-sub" data-i18n-cam="${currentModal.cam}">${CAMS[currentModal.cam].name} · ${CAMS[currentModal.cam].loc}</div>
+          <div class="evt-sub" data-i18n="ackBy">${t('ackBy')}</div>
           <div class="evt-time">${ts()}</div>
         </div>`;
       list.insertBefore(evt, list.firstChild);
@@ -695,7 +1122,7 @@ function acknowledgeAlert(){
 function toggleTheme(){
   isDark=!isDark;
   document.documentElement.setAttribute('data-theme', isDark?'dark':'light');
-  document.getElementById('themeBtn').textContent=isDark?'Dark':'Light';
+  document.getElementById('themeBtn').textContent = isDark ? t('theme') : t('themeAlt');
   renderAnalytics();  // heatmap alpha colors resolve from the new theme
 }
 
@@ -744,7 +1171,7 @@ function renderAnalytics(){
 
 function renderOccupancy(rows){
   const box = document.getElementById('occ-chart');
-  if(!rows.length){ box.innerHTML = '<div class="chart-empty">Collecting samples…</div>'; return; }
+  if(!rows.length){ box.innerHTML = `<div class="chart-empty" data-i18n="collecting">${t('collecting')}</div>`; return; }
   const minutes = [...new Set(rows.map(r => r.minute))].sort();
   const series = {};
   rows.forEach(r => { (series[r.cam_id] = series[r.cam_id] || {})[r.minute] = r.avg_persons; });
@@ -777,7 +1204,7 @@ function renderOccupancy(rows){
 
 function renderAlertBars(rows){
   const box = document.getElementById('alerts-chart');
-  if(!rows.length){ box.innerHTML = '<div class="chart-empty">No alerts yet</div>'; return; }
+  if(!rows.length){ box.innerHTML = `<div class="chart-empty" data-i18n="noAlerts">${t('noAlerts')}</div>`; return; }
   const W = 270, H = 70, PB = 12, PT = 4;
   const yMax = Math.max(...rows.map(r => r.gathering + r.fall));
   const bw = Math.min(18, (W - 4) / rows.length - 2);
@@ -794,7 +1221,7 @@ function renderAlertBars(rows){
     }
     if(r.fall)
       svg += `<rect x="${xp}" y="${yCursor-hF}" width="${bw}" height="${hF}" rx="1" fill="var(--red)"/>`;
-    svg += `<rect x="${xp-1}" y="0" width="${bw+2}" height="${H}" fill="transparent" data-tip="${r.hour.slice(11)}:00\nGathering: ${r.gathering}\nFall: ${r.fall}"/>`;
+    svg += `<rect x="${xp-1}" y="0" width="${bw+2}" height="${H}" fill="transparent" data-tip="${r.hour.slice(11)}:00\n${t('crowdShort')}: ${r.gathering}\n${t('fallShort')}: ${r.fall}"/>`;
     if(i === 0 || i === rows.length - 1)
       svg += `<text class="axis-lbl" x="${xp}" y="${H-2}">${r.hour.slice(11)}h</text>`;
   });
@@ -813,30 +1240,42 @@ function renderZones(data){
     const a = data.max ? 0.08 + 0.85 * (v / data.max) : 0;
     if(v > 0) cell.style.background =
       blue + Math.round(a * 255).toString(16).padStart(2, '0');
-    cell.setAttribute('data-tip', `Zone r${r+1}c${c+1}\nPersons seen: ${v}`);
+    cell.setAttribute('data-tip', `${t('zone')} r${r+1}c${c+1}\n${t('personsSeen')}: ${v}`);
     cell.innerHTML = `<span>${v || ''}</span>`;
     grid.appendChild(cell);
   }));
 }
 
 // ── BACKEND STATUS ────────────────────────────────────────────────
+let _lastBackendStatus = false;  // remembered so applyLang() can re-render it
+
 function setBackendStatus(connected){
+  _lastBackendStatus = connected;
   const btn = document.getElementById('backendStatus');
   const poll = document.getElementById('pollStatus');
   if(!btn) return;
   if(connected){
-    btn.textContent = 'Connected';
+    btn.textContent = t('connected');
     btn.style.borderColor = 'var(--green)';
     btn.style.color = 'var(--green)';
     btn.style.background = 'var(--bg-green)';
-    if(poll) poll.textContent = 'Live';
+    if(poll) poll.textContent = t('liveStatus');
   } else {
-    btn.textContent = 'Offline';
+    btn.textContent = t('offline');
     btn.style.borderColor = 'var(--red)';
     btn.style.color = 'var(--red)';
     btn.style.background = 'var(--bg-red)';
-    if(poll) poll.textContent = 'Retrying…';
+    if(poll) poll.textContent = t('retrying');
   }
+}
+
+// Detection-rate subtitle: kept in a function so a language switch can
+// re-render it from the last known value without waiting for the next poll.
+let _lastLatencyMs = null;
+function renderLatency(){
+  const el = document.getElementById('det-lat');
+  if(el) el.textContent = _lastLatencyMs != null
+    ? `fps · ~${_lastLatencyMs} ${t('msFrame')}` : '';
 }
 
 // ── ALERT ROW HANDLER (shared by WebSocket push and polling) ──────
@@ -845,7 +1284,21 @@ function setBackendStatus(connected){
 function handleAlertRow(type, row){
   if(!row || !row.id) return;
   const active = row.is_fall != null ? row.is_fall : row.is_alert;
-  if(!active) return;
+
+  // Detector reports the condition has ended → return that camera to Normal
+  // on its own. The engine writes an is_alert=0 row on every alert→clear
+  // transition and pushes it over the WebSocket; this used to be discarded,
+  // so a tile stayed red until an operator pressed Clear. Only the WebSocket
+  // carries these — /latest and /fall/latest filter to active alerts.
+  if(!active){
+    const camId = row.cam_id;
+    if(camId && activeAlerts[camId + ':' + type]){
+      clearAlert(camId, type);
+      addClearedToLog(camId, type);
+    }
+    return;
+  }
+
   if(type === 'gathering'){
     if(row.id === lastCrowdId) return;
     lastCrowdId = row.id;
@@ -855,13 +1308,18 @@ function handleAlertRow(type, row){
     lastFallId = row.id;
     localStorage.setItem('vg_last_fall_id', String(lastFallId));
   }
-  const now = Date.now();
-  if(lastAlertFiredAt[type] && now - lastAlertFiredAt[type] <= ALERT_DEDUP_MS) return;
-  lastAlertFiredAt[type] = now;
   const cam = row.cam_id || 1;
-  clearAlert(cam);
-  delete lastModalAt[type];
-  triggerAlert(cam, type, row);
+  const now = Date.now();
+  const fireKey = type + ':' + cam;   // per camera — CAM-01 and CAM-02 firing
+                                      // the same type at once both get through
+  if(lastAlertFiredAt[fireKey] && now - lastAlertFiredAt[fireKey] <= ALERT_DEDUP_MS) return;
+  lastAlertFiredAt[fireKey] = now;
+  clearAlert(cam, type);              // reset just this type so it re-flashes
+  triggerAlert(cam, type, row);       // MODAL_COOLDOWN_MS still applies: the
+  // tile flashes and the event log grows for every alert, but the popup
+  // re-opens at most once per camera+type per cooldown. (This used to delete
+  // the cooldown entry here, which silently made MODAL_COOLDOWN_MS dead code
+  // and re-opened the popup for every single state transition.)
 }
 
 // ── WEBSOCKET ALERT PUSH (instant; polling remains as fallback) ───
@@ -879,7 +1337,8 @@ function initAlertSocket(){
   ws.onmessage = (msg) => {
     try {
       const ev = JSON.parse(msg.data);
-      if(TYPES[ev.type]) handleAlertRow(ev.type, ev);
+      if(ev.type === 'escalation') handleEscalation(ev);
+      else if(TYPES[ev.type]) handleAlertRow(ev.type, ev);
     } catch(e) {}
   };
   ws.onclose = () => {
@@ -895,18 +1354,17 @@ async function pollBackend(){
   pollInFlight = true;
   try {
     const [stats, latest, latestFall] = await Promise.all([
-      fetch(API_BASE + '/stats').then(r => r.json()),
-      fetch(API_BASE + '/latest').then(r => r.json()),
-      fetch(API_BASE + '/fall/latest').then(r => r.json())
+      api('/stats').then(r => r.json()),
+      api('/latest').then(r => r.json()),
+      api('/fall/latest').then(r => r.json())
     ]);
 
     // Only update stat cards when the value actually changes so the
     // pop animation doesn't fire on every poll.
     lastAlertCount = updateStatCard('alert-count', stats.alert_count, lastAlertCount);
     lastFps = updateStatCard('det-fps', stats.detection_fps ?? 0, lastFps);
-    const latEl = document.getElementById('det-lat');
-    if(latEl) latEl.textContent = stats.avg_latency_ms != null
-      ? 'fps · ~' + stats.avg_latency_ms + ' ms/frame' : '';
+    _lastLatencyMs = stats.avg_latency_ms;
+    renderLatency();
     lastPersonsNow = updateStatCard('persons-now', stats.persons_now, lastPersonsNow);
     lastCamsLive   = updateStatCard('cams-live',
                        stats.cameras_live + ' / ' + stats.cameras_total, lastCamsLive);

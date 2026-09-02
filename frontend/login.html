@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>VisionGuard · Sign In</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg:#0d1117; --surf:#161b22; --surf2:#1c2128; --border:#30363d;
+  --text:#e6edf3; --text2:#8b949e; --text3:#6e7681;
+  --green:#3fb950; --red:#f85149; --blue:#58a6ff;
+  --bg-red:rgba(248,81,73,0.1);
+  --mono:'IBM Plex Mono',monospace; --sans:'Inter',sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;font-family:var(--sans);background:var(--bg);color:var(--text);font-size:13px;line-height:1.5}
+
+/* Faint grid, the way an operations console looks. Purely atmospheric —
+   no animation, nothing that moves behind a form someone is typing into. */
+body{
+  display:flex;align-items:center;justify-content:center;padding:24px;
+  background-image:
+    linear-gradient(var(--surf) 1px, transparent 1px),
+    linear-gradient(90deg, var(--surf) 1px, transparent 1px);
+  background-size:44px 44px;
+  background-position:center;
+}
+.shell{width:380px;max-width:100%}
+
+.brand{text-align:center;margin-bottom:22px}
+.brand .logo{font-family:var(--mono);font-size:20px;color:var(--blue);letter-spacing:3px;user-select:none}
+.brand .sub{font-family:var(--mono);font-size:10px;color:var(--text3);letter-spacing:1.2px;margin-top:6px;text-transform:uppercase}
+
+.card{background:var(--surf);border:0.5px solid var(--border);border-radius:12px;overflow:hidden;
+      box-shadow:0 12px 40px rgba(0,0,0,.45)}
+.card-body{padding:24px}
+
+.fld{margin-bottom:14px}
+.fld label{display:block;font-family:var(--mono);font-size:10px;letter-spacing:.6px;color:var(--text2);text-transform:uppercase;margin-bottom:6px}
+.fld input{width:100%;padding:10px 12px;border-radius:7px;border:0.5px solid var(--border);background:var(--surf2);color:var(--text);font-size:13px;font-family:var(--sans);transition:border-color .15s, box-shadow .15s}
+.fld input::placeholder{color:var(--text3)}
+.fld input:focus{outline:none;border-color:var(--blue);box-shadow:0 0 0 3px rgba(88,166,255,.12)}
+.fld .hint{font-family:var(--mono);font-size:9px;color:var(--text3);margin-top:5px;line-height:1.45}
+
+/* Optional fields sit visually below the essentials */
+.divider{display:flex;align-items:center;gap:10px;margin:18px 0 14px;font-family:var(--mono);font-size:9px;color:var(--text3);letter-spacing:.8px;text-transform:uppercase}
+.divider::before,.divider::after{content:"";flex:1;height:1px;background:var(--border)}
+
+.btn{width:100%;padding:11px;border-radius:7px;border:0.5px solid var(--blue);background:var(--blue);color:#fff;font-size:12px;font-family:var(--mono);letter-spacing:.5px;cursor:pointer;transition:.15s;margin-top:4px}
+.btn:hover{filter:brightness(1.08)}
+.btn:active{transform:translateY(1px)}
+.btn:disabled{opacity:.55;cursor:default;transform:none}
+
+.err{display:none;font-size:11px;color:var(--red);background:var(--bg-red);border:0.5px solid var(--red);border-radius:7px;padding:9px 12px;margin-bottom:16px;font-family:var(--mono);line-height:1.4}
+.err.show{display:block}
+
+.foot{padding:11px 24px;border-top:0.5px solid var(--border);background:var(--surf2);font-family:var(--mono);font-size:9px;color:var(--text3);text-align:center;letter-spacing:.5px}
+</style>
+</head>
+<body>
+
+<div class="shell">
+  <div class="brand">
+    <div class="logo">VISIONGUARD</div>
+    <div class="sub">Surveillance Operations Console</div>
+  </div>
+
+  <div class="card">
+    <div class="card-body">
+      <div class="err" id="err"></div>
+      <form id="form" autocomplete="off">
+        <div class="fld">
+          <label for="username">Username</label>
+          <input id="username" name="username" required autocomplete="username" placeholder="operator@example.com">
+        </div>
+        <div class="fld">
+          <label for="password">Password</label>
+          <input id="password" name="password" type="password" required autocomplete="current-password" placeholder="••••••••">
+        </div>
+
+        <div class="divider setup-only" style="display:none">Administrator details</div>
+
+        <div class="fld setup-only" style="display:none">
+          <label for="full_name">Full name</label>
+          <input id="full_name" name="full_name" placeholder="Anam Khan">
+        </div>
+        <div class="fld setup-only" style="display:none">
+          <label for="telegram">Telegram chat ID</label>
+          <input id="telegram" name="telegram" placeholder="123456789" inputmode="numeric">
+          <div class="hint">Escalated alerts are delivered here.
+            Run <code>python tools/telegram_ids.py</code> to find it.</div>
+        </div>
+        <div class="fld setup-only" style="display:none">
+          <label for="phone">Phone number <span style="color:var(--text3)">(optional)</span></label>
+          <input id="phone" name="phone" placeholder="+919876543210">
+        </div>
+
+        <button class="btn" id="submitBtn" type="submit">Sign In</button>
+      </form>
+    </div>
+    <div class="foot">Authorised personnel only</div>
+  </div>
+</div>
+
+<script>
+const API = location.origin;
+let needsSetup = false;
+
+const $ = id => document.getElementById(id);
+function showErr(msg){ const e=$('err'); e.textContent=msg; e.classList.add('show'); }
+function clearErr(){ $('err').classList.remove('show'); }
+
+// Whether this is the one-time administrator registration or a normal
+// sign-in is decided by the server, not the page. The only visible
+// difference is the extra fields and the button label — the screen does not
+// announce which mode it is in.
+async function init(){
+  try {
+    const st = await fetch(API + '/auth/status').then(r => r.json());
+    if (st.signed_in) { location.href = '/'; return; }
+    needsSetup = st.needs_setup;
+  } catch(e) {
+    showErr('Cannot reach the server. Is it running?');
+    return;
+  }
+  if (needsSetup) {
+    $('submitBtn').textContent = 'Create Administrator';
+    $('password').setAttribute('autocomplete', 'new-password');
+    document.querySelectorAll('.setup-only').forEach(el => el.style.display = '');
+  }
+  $('username').focus();
+}
+
+$('form').addEventListener('submit', async e => {
+  e.preventDefault();
+  clearErr();
+  const btn = $('submitBtn');
+  btn.disabled = true;
+  const body = {
+    username: $('username').value.trim(),
+    password: $('password').value,
+  };
+  if (needsSetup) {
+    body.full_name = $('full_name').value.trim();
+    body.phone = $('phone').value.trim();
+    body.telegram_chat_id = $('telegram').value.trim();
+  }
+  try {
+    const res = await fetch(API + (needsSetup ? '/auth/register' : '/auth/login'), {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) {
+      const d = await res.json().catch(() => ({}));
+      showErr(d.detail || 'Sign in failed');
+      btn.disabled = false;
+      return;
+    }
+    location.href = '/';   // session cookie is set; the dashboard will load
+  } catch(err) {
+    showErr('Cannot reach the server. Is it running?');
+    btn.disabled = false;
+  }
+});
+
+init();
+</script>
+</body>
+</html>

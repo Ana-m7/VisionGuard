@@ -18,16 +18,18 @@ from datetime import datetime, timedelta
 import csv
 import io
 
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import (Depends, FastAPI, HTTPException, Request, Response as FResponse,
+                     WebSocket, WebSocketDisconnect)
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import Response, StreamingResponse
-from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse, RedirectResponse, Response, StreamingResponse
 import uvicorn
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import config
 from detector.engine import FrameStore, LiveStats, alert_queue, init_db, start_engine
+from backend import auth
+from backend.escalation import escalation_loop
 
 frame_store = FrameStore()
 live_stats = LiveStats()
@@ -61,28 +63,212 @@ async def broadcast_alerts():
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
+    auth.init_auth_db()
+    auth.purge_expired_sessions()
+    if auth.user_count() == 0:
+        print("No accounts yet — open the dashboard to register the administrator.")
     start_engine(frame_store, live_stats)
     broadcaster = asyncio.create_task(broadcast_alerts())
+    # The escalation sweep pushes its events onto the same queue the camera
+    # threads use, so escalations reach dashboards over the existing socket.
+    escalator = asyncio.create_task(escalation_loop(alert_queue.put))
     yield
     broadcaster.cancel()
+    escalator.cancel()
 
 
 app = FastAPI(title="VisionGuard", lifespan=lifespan)
 
+# Same-origin only: the dashboard is served by this process, and session
+# cookies are not sent cross-origin with credentials under a wildcard anyway.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # local demo only — do not expose publicly
+    allow_origins=[f"http://{config.HOST}:{config.PORT}",
+                   f"http://localhost:{config.PORT}"],
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Alert evidence snapshots, addressed by filename from the DB rows
+
+# ================================================================
+# AUTH DEPENDENCIES
+# ================================================================
+def current_user(request: Request):
+    """Resolve the session cookie, or 401. Cookies (not bearer tokens) because
+    the MJPEG feeds are <img> tags, which cannot send an Authorization header."""
+    user = auth.user_for_token(request.cookies.get(config.SESSION_COOKIE))
+    if not user:
+        raise HTTPException(status_code=401, detail="Not signed in")
+    return user
+
+
+def require_admin(user=Depends(current_user)):
+    if user["role"] != auth.ROLE_ADMIN:
+        raise HTTPException(status_code=403, detail="Administrator access required")
+    return user
+
 os.makedirs(config.EVIDENCE_DIR, exist_ok=True)
-app.mount("/evidence", StaticFiles(directory=config.EVIDENCE_DIR), name="evidence")
+
+
+@app.get("/evidence/{filename}")
+def evidence(filename: str, user=Depends(current_user)):
+    """Alert evidence snapshots, addressed by filename from the DB rows.
+    Served through a route rather than a StaticFiles mount so the session
+    check applies — a mount would have left every snapshot public."""
+    # basename() so a crafted "../.." filename cannot escape the folder
+    path = os.path.join(config.EVIDENCE_DIR, os.path.basename(filename))
+    if not os.path.isfile(path):
+        raise HTTPException(status_code=404, detail="No such snapshot")
+    return FileResponse(path, media_type="image/jpeg")
+
+# The dashboard is served from this same process, so the whole demo is one
+# URL (http://127.0.0.1:8000) with no separate static server.
+FRONTEND_DIR = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "frontend")
+
+
+NO_CACHE = {"Cache-Control": "no-store, must-revalidate"}
+
+
+@app.get("/")
+def dashboard(request: Request):
+    # no-store: the dashboard is edited between runs, and a cached copy would
+    # silently show stale camera labels and config after a restart.
+    if not auth.user_for_token(request.cookies.get(config.SESSION_COOKIE)):
+        return RedirectResponse("/login", status_code=302)
+    return FileResponse(os.path.join(FRONTEND_DIR, "dashboard.html"),
+                        headers=NO_CACHE)
+
+
+@app.get("/login")
+def login_page():
+    return FileResponse(os.path.join(FRONTEND_DIR, "login.html"),
+                        headers=NO_CACHE)
+
+
+# ================================================================
+# AUTH
+# ================================================================
+def _set_session_cookie(response, token):
+    response.set_cookie(
+        config.SESSION_COOKIE, token,
+        httponly=True,           # unreadable from JavaScript
+        samesite="lax",
+        max_age=config.SESSION_TTL_HOURS * 3600,
+        path="/",
+    )
+
+
+@app.get("/auth/status")
+def auth_status(request: Request):
+    """Drives the login page: before any account exists it offers the one-time
+    administrator registration, afterwards it offers sign-in."""
+    user = auth.user_for_token(request.cookies.get(config.SESSION_COOKIE))
+    return {"needs_setup": auth.user_count() == 0,
+            "signed_in": bool(user), "user": user}
+
+
+@app.post("/auth/register")
+def auth_register(payload: dict, response: FResponse):
+    """First-run only: creates the administrator. Once any account exists this
+    route is closed, so it can never be used to grant yourself admin later."""
+    if auth.user_count() > 0:
+        raise HTTPException(status_code=403,
+                            detail="Setup already complete — ask an administrator for an account")
+    username = (payload.get("username") or "").strip()
+    password = payload.get("password") or ""
+    if len(username) < 3:
+        raise HTTPException(status_code=400, detail="Username must be at least 3 characters")
+    if len(password) < 6:
+        raise HTTPException(status_code=400, detail="Password must be at least 6 characters")
+    uid = auth.create_user(username, password, auth.ROLE_ADMIN,
+                           (payload.get("full_name") or "").strip() or None,
+                           (payload.get("phone") or "").strip() or None,
+                           (payload.get("telegram_chat_id") or "").strip() or None)
+    _set_session_cookie(response, auth.create_session(uid))
+    return {"ok": True, "role": auth.ROLE_ADMIN}
+
+
+@app.post("/auth/login")
+def auth_login(payload: dict, response: FResponse):
+    user = auth.get_user_by_username((payload.get("username") or "").strip())
+    if not user or not auth.verify_password(
+            payload.get("password") or "", user["password_hash"], user["salt"]):
+        # One message for both cases — revealing which half was wrong tells an
+        # attacker which usernames exist.
+        raise HTTPException(status_code=401, detail="Incorrect username or password")
+    _set_session_cookie(response, auth.create_session(user["id"]))
+    return {"ok": True, "role": user["role"], "full_name": user["full_name"]}
+
+
+@app.post("/auth/logout")
+def auth_logout(request: Request, response: FResponse):
+    auth.destroy_session(request.cookies.get(config.SESSION_COOKIE))
+    response.delete_cookie(config.SESSION_COOKIE, path="/")
+    return {"ok": True}
+
+
+@app.get("/auth/me")
+def auth_me(user=Depends(current_user)):
+    return {**user, "role_label": auth.ROLE_LABELS.get(user["role"], user["role"])}
+
+
+# ================================================================
+# USER MANAGEMENT (administrator only)
+# ================================================================
+@app.get("/users")
+def get_users(user=Depends(require_admin)):
+    return auth.list_users()
+
+
+@app.post("/users")
+def add_user(payload: dict, user=Depends(require_admin)):
+    """Create a guard (or another administrator). The phone number is what the
+    escalation ladder notifies, so it is required."""
+    username = (payload.get("username") or "").strip()
+    password = payload.get("password") or ""
+    role = payload.get("role") or auth.ROLE_GUARD
+    phone = (payload.get("phone") or "").strip()
+    if len(username) < 3:
+        raise HTTPException(status_code=400, detail="Username must be at least 3 characters")
+    if len(password) < 6:
+        raise HTTPException(status_code=400, detail="Password must be at least 6 characters")
+    if role not in (auth.ROLE_ADMIN, auth.ROLE_GUARD):
+        raise HTTPException(status_code=400, detail="Unknown role")
+    chat_id = (payload.get("telegram_chat_id") or "").strip()
+    if phone and not phone.startswith("+"):
+        raise HTTPException(
+            status_code=400,
+            detail="Phone must be in international format, e.g. +919876543210")
+    if chat_id and not chat_id.lstrip("-").isdigit():
+        raise HTTPException(
+            status_code=400, detail="Telegram chat ID must be numeric")
+    # Reachable on at least one transport, or escalation can never notify them
+    if not phone and not chat_id:
+        raise HTTPException(
+            status_code=400,
+            detail="Give a Telegram chat ID or a phone number so alerts can reach them")
+    try:
+        uid = auth.create_user(username, password, role,
+                               (payload.get("full_name") or "").strip() or None,
+                               phone or None, chat_id or None)
+    except ValueError as e:
+        raise HTTPException(status_code=409, detail=str(e))
+    return {"ok": True, "id": uid}
+
+
+@app.delete("/users/{user_id}")
+def remove_user(user_id: int, user=Depends(require_admin)):
+    if user_id == user["id"]:
+        raise HTTPException(status_code=400, detail="You cannot remove your own account")
+    if not auth.delete_user(user_id):
+        raise HTTPException(status_code=404, detail="User not found")
+    return {"ok": True}
 
 
 def get_db():
-    conn = sqlite3.connect(config.DB_PATH)
+    conn = sqlite3.connect(config.DB_PATH, timeout=30)
     conn.row_factory = sqlite3.Row
     return conn
 
@@ -106,7 +292,7 @@ def generate_stream(cam_id):
 
 
 @app.get("/video_feed/{cam_id}")
-def video_feed(cam_id: int):
+def video_feed(cam_id: int, user=Depends(current_user)):
     if cam_id not in config.VIDEO_SOURCES:
         raise HTTPException(status_code=404, detail="Unknown camera")
     return StreamingResponse(
@@ -117,6 +303,12 @@ def video_feed(cam_id: int):
 
 @app.websocket("/ws/alerts")
 async def ws_alerts(ws: WebSocket):
+    # The handshake carries cookies like any request, so the session is
+    # checked before the socket is accepted — an unauthenticated client
+    # never joins the alert broadcast.
+    if not auth.user_for_token(ws.cookies.get(config.SESSION_COOKIE)):
+        await ws.close(code=1008)
+        return
     await ws.accept()
     ws_clients.add(ws)
     try:
@@ -132,7 +324,7 @@ async def ws_alerts(ws: WebSocket):
 # STATS
 # ================================================================
 @app.get("/stats")
-def get_stats():
+def get_stats(user=Depends(current_user)):
     conn = get_db()
     cur = conn.cursor()
     cutoff = recent_cutoff()
@@ -162,7 +354,7 @@ def get_stats():
 # ALERTS
 # ================================================================
 @app.get("/latest")
-def get_latest_crowd():
+def get_latest_crowd(user=Depends(current_user)):
     conn = get_db()
     cur = conn.cursor()
     cur.execute(
@@ -185,7 +377,7 @@ def get_latest_crowd():
 
 
 @app.get("/fall/latest")
-def get_latest_fall():
+def get_latest_fall(user=Depends(current_user)):
     conn = get_db()
     cur = conn.cursor()
     cur.execute(
@@ -207,7 +399,7 @@ def get_latest_fall():
 
 
 @app.get("/alerts/recent")
-def get_recent_alerts(limit: int = 50):
+def get_recent_alerts(limit: int = 50, user=Depends(current_user)):
     """Recent alerts from both detectors, newest first — used by the
     dashboard to rebuild its event log after a page load."""
     conn = get_db()
@@ -236,7 +428,7 @@ def get_recent_alerts(limit: int = 50):
 # ANALYTICS
 # ================================================================
 @app.get("/analytics/occupancy")
-def analytics_occupancy(minutes: int = 30):
+def analytics_occupancy(minutes: int = 30, user=Depends(current_user)):
     """Average persons in view per camera, bucketed per minute."""
     cutoff = (datetime.now() - timedelta(minutes=minutes)).strftime("%Y-%m-%d %H:%M:%S")
     conn = get_db()
@@ -257,7 +449,7 @@ def analytics_occupancy(minutes: int = 30):
 
 
 @app.get("/analytics/alerts")
-def analytics_alerts(hours: int = 12):
+def analytics_alerts(hours: int = 12, user=Depends(current_user)):
     """Alert counts per hour for both detectors."""
     cutoff = (datetime.now() - timedelta(hours=hours)).strftime("%Y-%m-%d %H:%M:%S")
     conn = get_db()
@@ -282,7 +474,7 @@ def analytics_alerts(hours: int = 12):
 
 
 @app.get("/analytics/zones")
-def analytics_zones(minutes: int = 30):
+def analytics_zones(minutes: int = 30, user=Depends(current_user)):
     """Summed per-zone person counts over the window — heatmap data."""
     cutoff = (datetime.now() - timedelta(minutes=minutes)).strftime("%Y-%m-%d %H:%M:%S")
     conn = get_db()
@@ -303,27 +495,69 @@ def analytics_zones(minutes: int = 30):
             "total": total, "max": max(v for row in total for v in row)}
 
 
+ALERT_TABLES = {"gathering": ("crowd_events", "is_alert"),
+                ("fall"): ("fall_events", "is_fall")}
+
+
 @app.post("/alerts/ack")
-def acknowledge_alert(type: str, id: int):
-    """Persist an operator acknowledgement on an alert row, so the
-    audit trail survives page reloads and restarts."""
-    table = {"gathering": "crowd_events", "fall": "fall_events"}.get(type)
-    if not table:
+def acknowledge_alert(type: str, id: int, user=Depends(current_user)):
+    """Persist an operator acknowledgement, so the audit trail survives page
+    reloads and restarts — and so the alert stops climbing the escalation
+    ladder.
+
+    This acknowledges the named alert *and every earlier unacknowledged alert
+    of the same type on the same camera*. A continuing situation writes a
+    fresh row each time the detector flips state, so a single incident can
+    leave a dozen rows behind. Acknowledging only the one the operator
+    happened to click would leave the rest escalating and the notifications
+    arriving long after the situation was handled.
+    """
+    entry = ALERT_TABLES.get(type)
+    if not entry:
         raise HTTPException(status_code=400, detail="Unknown alert type")
+    table, flag = entry
     when = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     conn = get_db()
     cur = conn.cursor()
-    cur.execute(f"UPDATE {table} SET acknowledged_at = ? WHERE id = ?", (when, id))
+    row = cur.execute(f"SELECT cam_id FROM {table} WHERE id = ?", (id,)).fetchone()
+    if not row:
+        conn.close()
+        raise HTTPException(status_code=404, detail="Alert not found")
+    cur.execute(
+        f"""UPDATE {table} SET acknowledged_at = ?
+            WHERE {flag} = 1 AND acknowledged_at IS NULL
+              AND cam_id IS ? AND id <= ?""",
+        (when, row["cam_id"], id))
     updated = cur.rowcount
     conn.commit()
     conn.close()
-    if not updated:
-        raise HTTPException(status_code=404, detail="Alert not found")
-    return {"ok": True, "acknowledged_at": when}
+    return {"ok": True, "acknowledged_at": when, "acknowledged": updated}
+
+
+@app.post("/alerts/ack_all")
+def acknowledge_all(user=Depends(current_user)):
+    """Acknowledge every outstanding alert — the 'Clear Alerts' control.
+
+    Clearing used to be cosmetic: it reset the dashboard's own state and left
+    the rows unacknowledged, so the escalation ladder kept climbing and
+    notifications kept arriving for alerts the operator had visibly dismissed.
+    """
+    when = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    conn = get_db()
+    cur = conn.cursor()
+    total = 0
+    for table, flag in ALERT_TABLES.values():
+        cur.execute(
+            f"""UPDATE {table} SET acknowledged_at = ?
+                WHERE {flag} = 1 AND acknowledged_at IS NULL""", (when,))
+        total += cur.rowcount
+    conn.commit()
+    conn.close()
+    return {"ok": True, "acknowledged": total, "acknowledged_at": when}
 
 
 @app.get("/export/alerts.csv")
-def export_alerts_csv():
+def export_alerts_csv(user=Depends(current_user)):
     """Full alert history (both detectors) as a CSV download."""
     conn = get_db()
     cur = conn.cursor()
@@ -361,7 +595,7 @@ def export_alerts_csv():
 
 
 @app.post("/alerts/clear")
-def clear_alerts():
+def clear_alerts(user=Depends(require_admin)):
     conn = get_db()
     cur = conn.cursor()
     cur.execute("DELETE FROM crowd_events")
@@ -375,6 +609,16 @@ def clear_alerts():
 
 
 if __name__ == "__main__":
+    # Pop the dashboard open in the default browser once the server is up.
+    # threading.Timer fires after uvicorn.run() has already taken over the
+    # main thread, so the delay just gives the socket time to start listening.
+    import threading
+    import webbrowser
+
+    url = f"http://{config.HOST}:{config.PORT}"
+    threading.Timer(1.5, lambda: webbrowser.open(url)).start()
+    print(f"Opening {url} in your browser…")
+
     # No auto-reload: the detector threads live in this process, and a
     # reload supervisor would restart them on every file change.
     uvicorn.run(app, host=config.HOST, port=config.PORT)

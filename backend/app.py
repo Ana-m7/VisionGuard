@@ -474,13 +474,24 @@ def analytics_alerts(hours: int = 12, user=Depends(current_user)):
 
 
 @app.get("/analytics/zones")
-def analytics_zones(minutes: int = 30, user=Depends(current_user)):
-    """Summed per-zone person counts over the window — heatmap data."""
+def analytics_zones(minutes: int = 30, cam_id: int = None,
+                    user=Depends(current_user)):
+    """Summed per-zone person counts over the window — movement-hotspot data.
+
+    Without cam_id this sums every camera together, which mixes unrelated
+    scenes. Pass a cam_id to see where people cluster in one camera's frame,
+    which is the view an operator can actually act on.
+    """
     cutoff = (datetime.now() - timedelta(minutes=minutes)).strftime("%Y-%m-%d %H:%M:%S")
     conn = get_db()
     cur = conn.cursor()
-    cur.execute(
-        "SELECT zones FROM occupancy_samples WHERE timestamp >= ?", (cutoff,))
+    if cam_id is not None:
+        cur.execute(
+            "SELECT zones FROM occupancy_samples WHERE timestamp >= ? AND cam_id = ?",
+            (cutoff, cam_id))
+    else:
+        cur.execute(
+            "SELECT zones FROM occupancy_samples WHERE timestamp >= ?", (cutoff,))
     total = [[0] * config.GRID_COLS for _ in range(config.GRID_ROWS)]
     for (zones_json,) in cur.fetchall():
         try:
@@ -490,9 +501,46 @@ def analytics_zones(minutes: int = 30, user=Depends(current_user)):
         for r in range(config.GRID_ROWS):
             for c in range(config.GRID_COLS):
                 total[r][c] += zones[r][c]
+    # Cameras that have produced at least one sample in the window, so the
+    # dashboard can offer only cameras that actually have data.
+    cams = [r[0] for r in cur.execute(
+        "SELECT DISTINCT cam_id FROM occupancy_samples WHERE timestamp >= ? ORDER BY cam_id",
+        (cutoff,)).fetchall()]
     conn.close()
-    return {"rows": config.GRID_ROWS, "cols": config.GRID_COLS,
-            "total": total, "max": max(v for row in total for v in row)}
+    return {"rows": config.GRID_ROWS, "cols": config.GRID_COLS, "cam_id": cam_id,
+            "cameras": cams, "total": total,
+            "max": max(v for row in total for v in row)}
+
+
+@app.get("/analytics/by_camera")
+def analytics_by_camera(hours: int = 24, user=Depends(current_user)):
+    """Alert counts per camera, split by type, over the window.
+
+    Answers the question a supervisor acts on — *which location generates the
+    incidents* — rather than which hour of the day they happened in.
+    """
+    cutoff = (datetime.now() - timedelta(hours=hours)).strftime("%Y-%m-%d %H:%M:%S")
+    conn = get_db()
+    cur = conn.cursor()
+    per_cam = {}
+    for cam in config.VIDEO_SOURCES:
+        per_cam[cam] = {"cam_id": cam, "crowd": 0, "fall": 0}
+    cur.execute(
+        """SELECT cam_id, COUNT(*) n FROM crowd_events
+           WHERE is_alert = 1 AND timestamp >= ? GROUP BY cam_id""", (cutoff,))
+    for r in cur.fetchall():
+        per_cam.setdefault(r["cam_id"], {"cam_id": r["cam_id"], "crowd": 0, "fall": 0})
+        per_cam[r["cam_id"]]["crowd"] = r["n"]
+    cur.execute(
+        """SELECT cam_id, COUNT(*) n FROM fall_events
+           WHERE is_fall = 1 AND timestamp >= ? GROUP BY cam_id""", (cutoff,))
+    for r in cur.fetchall():
+        per_cam.setdefault(r["cam_id"], {"cam_id": r["cam_id"], "crowd": 0, "fall": 0})
+        per_cam[r["cam_id"]]["fall"] = r["n"]
+    conn.close()
+    rows = sorted(per_cam.values(),
+                  key=lambda d: -(d["crowd"] + d["fall"]))
+    return {"hours": hours, "cameras": rows}
 
 
 ALERT_TABLES = {"gathering": ("crowd_events", "is_alert"),

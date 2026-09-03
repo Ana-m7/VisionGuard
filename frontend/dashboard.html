@@ -16,7 +16,7 @@
   --mono:'IBM Plex Mono',monospace;
   --sans:'Inter',sans-serif;
   /* chart series (contrast-checked per theme) */
-  --c-cam1:#388bfd; --c-cam2:#db6d28; --c-cam3:#8957e5;
+  --c-cam1:#388bfd; --c-cam2:#db6d28; --c-cam3:#8957e5; --c-cam4:#3fb9a8;
 }
 [data-theme="light"] {
   --bg:#f0f2f5; --surf:#ffffff; --surf2:#e8eaed; --border:#d0d7de;
@@ -25,7 +25,7 @@
   --bg-green:rgba(26,127,55,0.1); --bg-red:rgba(207,34,46,0.1);
   --bg-amber:rgba(154,103,0,0.1); --bg-orange:rgba(188,76,0,0.1);
   --cam-bg:#070a0f;
-  --c-cam1:#0969da; --c-cam2:#bc4c00; --c-cam3:#8250df;
+  --c-cam1:#0969da; --c-cam2:#bc4c00; --c-cam3:#8250df; --c-cam4:#1b7c83;
 }
 *{box-sizing:border-box;margin:0;padding:0}
 html,body{height:100%;font-family:var(--sans);background:var(--bg);color:var(--text);font-size:13px;line-height:1.5}
@@ -135,16 +135,31 @@ html,body{height:100%;font-family:var(--sans);background:var(--bg);color:var(--t
 .evt-time{font-family:var(--mono);font-size:9px;color:var(--text3);margin-top:2px}
 
 /* ── CHARTS ── */
-.chart-legend{display:flex;gap:12px;margin-bottom:6px}
+.chart-legend{display:flex;gap:12px;margin-bottom:6px;flex-wrap:wrap}
 .chip{display:flex;align-items:center;gap:5px;font-family:var(--mono);font-size:9px;color:var(--text2)}
 .chip .swatch{width:9px;height:9px;border-radius:2px}
+.chip .swatch.dash{width:12px;height:0;border-top:1.5px dashed var(--red);border-radius:0}
 .chartbox svg{width:100%;display:block}
 .chartbox .axis-lbl{font-family:var(--mono);font-size:7px;fill:var(--text3)}
 .chartbox .gridline{stroke:var(--border);stroke-width:0.5;stroke-dasharray:2 3}
+.chartbox .threshold{stroke:var(--red);stroke-width:1;stroke-dasharray:3 2;opacity:.7}
+.chartbox .threshold-lbl{font-family:var(--mono);font-size:7px;fill:var(--red);opacity:.85}
 .zone-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:2px}
 .zone-cell{aspect-ratio:4/3;border-radius:2px;background:var(--surf2);position:relative;cursor:default}
 .zone-cell span{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:8px;color:var(--text2)}
+.zone-cell.peak{outline:1px solid var(--amber)}
 .chart-empty{font-family:var(--mono);font-size:9px;color:var(--text3);padding:8px 0}
+.panel-title-row{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;gap:8px}
+.panel-title-row .panel-title{margin-bottom:0}
+.mini-select{font-family:var(--mono);font-size:9px;padding:2px 5px;border-radius:4px;border:0.5px solid var(--border);background:var(--surf2);color:var(--text2);cursor:pointer;max-width:130px}
+.mini-select:focus{outline:none;border-color:var(--blue)}
+/* Alerts-by-location: horizontal stacked bars */
+.bycam-row{display:grid;grid-template-columns:70px 1fr auto;align-items:center;gap:7px;margin-bottom:5px;font-family:var(--mono);font-size:9px}
+.bycam-row .lbl{color:var(--text2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bycam-row .track{height:11px;border-radius:2px;background:var(--surf2);display:flex;overflow:hidden}
+.bycam-row .seg-crowd{background:var(--amber);height:100%}
+.bycam-row .seg-fall{background:var(--red);height:100%}
+.bycam-row .cnt{color:var(--text3);font-variant-numeric:tabular-nums}
 #chart-tip{position:fixed;display:none;background:var(--surf2);border:0.5px solid var(--border);border-radius:5px;padding:5px 8px;font-family:var(--mono);font-size:9px;color:var(--text);z-index:500;pointer-events:none;white-space:pre;box-shadow:0 2px 8px rgba(0,0,0,.35)}
 
 /* ── MODAL ── */
@@ -330,31 +345,31 @@ html,body{height:100%;font-family:var(--sans);background:var(--bg);color:var(--t
       </div>
     </div>
 
-    <!-- Occupancy trend -->
+    <!-- Occupancy trend — with the crowd-alert threshold marked -->
     <div class="panel">
-      <div class="panel-title" data-i18n="occupancyTitle">Occupancy · avg persons/min (30m)</div>
-      <div class="chart-legend">
-        <span class="chip"><span class="swatch" style="background:var(--c-cam1)"></span>CAM-01</span>
-        <span class="chip"><span class="swatch" style="background:var(--c-cam2)"></span>CAM-02</span>
-        <span class="chip"><span class="swatch" style="background:var(--c-cam3)"></span>CAM-03</span>
-      </div>
+      <div class="panel-title" data-i18n="occupancyTitle">Occupancy · people in view (30m)</div>
+      <div class="chart-legend" id="occ-legend"></div>
       <div class="chartbox" id="occ-chart"><div class="chart-empty" data-i18n="collecting">Collecting samples…</div></div>
     </div>
 
-    <!-- Alerts per hour -->
+    <!-- Alerts by location — where incidents concentrate -->
     <div class="panel">
-      <div class="panel-title" data-i18n="alertsHourTitle">Alerts per hour (12h)</div>
+      <div class="panel-title" data-i18n="byCamTitle">Alerts by location (24h)</div>
       <div class="chart-legend">
         <span class="chip"><span class="swatch" style="background:var(--amber)"></span><span data-i18n="crowdShort">Crowd</span></span>
         <span class="chip"><span class="swatch" style="background:var(--red)"></span><span data-i18n="fallShort">Fall</span></span>
       </div>
-      <div class="chartbox" id="alerts-chart"><div class="chart-empty" data-i18n="noAlerts">No alerts yet</div></div>
+      <div id="bycam-chart"><div class="chart-empty" data-i18n="noAlerts">No alerts yet</div></div>
     </div>
 
-    <!-- Zone heatmap -->
+    <!-- Movement hotspots — where people cluster in one camera's frame -->
     <div class="panel">
-      <div class="panel-title" data-i18n="zoneTitle">Zone density heatmap (30m)</div>
+      <div class="panel-title-row">
+        <span class="panel-title" data-i18n="hotspotTitle">Movement hotspots (30m)</span>
+        <select id="hotspot-cam" class="mini-select" onchange="fetchAnalytics()"></select>
+      </div>
       <div class="zone-grid" id="zone-chart"></div>
+      <div class="chart-empty" id="zone-empty" data-i18n="collecting" style="display:none">Collecting samples…</div>
     </div>
 
   </div><!-- /sidebar -->
@@ -422,8 +437,10 @@ html,body{height:100%;font-family:var(--sans);background:var(--bg);color:var(--t
 // fixed address when the file is opened directly (file://).
 const API_BASE       = location.origin.startsWith('http')
                          ? location.origin : 'http://localhost:8000';
-const ACTIVE_CAMS    = new Set([2, 4]);  // keep in sync with VIDEO_SOURCES in config.py
+const ACTIVE_CAMS    = new Set([4]);  // keep in sync with VIDEO_SOURCES in config.py
                                       // (was [1, 2, 3] — restore when the video files are re-enabled)
+const CROWD_ALERT_AT = 4;             // keep in sync with CROWD_MIN_PERSONS in config.py —
+                                      // drawn as the threshold line on the occupancy chart
 const STREAM_BASE    = API_BASE + '/video_feed/';
 const STREAM_RETRY_MS = 3000;
 const _retryTimers   = {};
@@ -481,9 +498,10 @@ const I18N = {
     normal:'Normal', clear:'Clear',
     waitingStream:'Waiting for stream...', noFeed:'No feed configured',
     eventLog:'Event Log',
-    occupancyTitle:'Occupancy · avg persons/min (30m)',
-    alertsHourTitle:'Alerts per hour (12h)',
-    zoneTitle:'Zone density heatmap (30m)',
+    occupancyTitle:'Occupancy · people in view (30m)',
+    byCamTitle:'Alerts by location (24h)',
+    hotspotTitle:'Movement hotspots (30m)',
+    crowdLine:'Crowd alert', allCameras:'All cameras',
     collecting:'Collecting samples…', noAlerts:'No alerts yet',
     sysInit:'System Initialized', sysInitSub:'Monitoring service started',
     systemBoot:'System boot',
@@ -519,9 +537,10 @@ const I18N = {
     normal:'सामान्य', clear:'हटाएँ',
     waitingStream:'स्ट्रीम की प्रतीक्षा...', noFeed:'कोई फ़ीड नहीं',
     eventLog:'घटना लॉग',
-    occupancyTitle:'उपस्थिति · औसत व्यक्ति/मिनट (30 मि)',
-    alertsHourTitle:'प्रति घंटा अलर्ट (12 घं)',
-    zoneTitle:'ज़ोन घनत्व हीटमैप (30 मि)',
+    occupancyTitle:'उपस्थिति · दृश्य में व्यक्ति (30 मि)',
+    byCamTitle:'स्थान अनुसार अलर्ट (24 घं)',
+    hotspotTitle:'गतिविधि केंद्र (30 मि)',
+    crowdLine:'भीड़ अलर्ट', allCameras:'सभी कैमरे',
     collecting:'नमूने एकत्र हो रहे हैं…', noAlerts:'अभी कोई अलर्ट नहीं',
     sysInit:'सिस्टम प्रारंभ', sysInitSub:'निगरानी सेवा शुरू',
     systemBoot:'सिस्टम बूट',
@@ -1152,92 +1171,147 @@ document.addEventListener('mouseout', e => {
 
 async function fetchAnalytics(){
   try {
-    const [occ, alerts, zones] = await Promise.all([
-      fetch(API_BASE + '/analytics/occupancy?minutes=30').then(r => r.json()),
-      fetch(API_BASE + '/analytics/alerts?hours=12').then(r => r.json()),
-      fetch(API_BASE + '/analytics/zones?minutes=30').then(r => r.json())
+    const cam = document.getElementById('hotspot-cam');
+    const zoneUrl = '/analytics/zones?minutes=30'
+      + (cam && cam.value ? '&cam_id=' + cam.value : '');
+    const [occ, byCam, zones] = await Promise.all([
+      api('/analytics/occupancy?minutes=30').then(r => r.json()),
+      api('/analytics/by_camera?hours=24').then(r => r.json()),
+      api(zoneUrl).then(r => r.json())
     ]);
-    lastAnalytics = {occ, alerts, zones};
+    lastAnalytics = {occ, byCam, zones};
     renderAnalytics();
-  } catch(e) { /* backend offline — keep last render */ }
+  } catch(e) { /* backend offline / signed out — keep last render */ }
 }
 
 function renderAnalytics(){
   if(!lastAnalytics) return;
   renderOccupancy(lastAnalytics.occ);
-  renderAlertBars(lastAnalytics.alerts);
+  renderAlertsByLocation(lastAnalytics.byCam);
   renderZones(lastAnalytics.zones);
 }
 
+const CAM_COLORS = {1:'var(--c-cam1)', 2:'var(--c-cam2)',
+                    3:'var(--c-cam3)', 4:'var(--c-cam4)'};
+
+// ── OCCUPANCY — people in view over time, with the crowd-alert line ──
+// The dashed red line marks CROWD_ALERT_AT. An operator watching a line
+// climb toward it knows to check that feed before the alert ever fires.
 function renderOccupancy(rows){
   const box = document.getElementById('occ-chart');
-  if(!rows.length){ box.innerHTML = `<div class="chart-empty" data-i18n="collecting">${t('collecting')}</div>`; return; }
+  const legend = document.getElementById('occ-legend');
+  if(!rows.length){
+    box.innerHTML = `<div class="chart-empty">${t('collecting')}</div>`;
+    legend.innerHTML = '';
+    return;
+  }
   const minutes = [...new Set(rows.map(r => r.minute))].sort();
   const series = {};
   rows.forEach(r => { (series[r.cam_id] = series[r.cam_id] || {})[r.minute] = r.avg_persons; });
-  const W = 270, H = 80, PL = 16, PB = 12, PT = 4;
-  const yMax = Math.max(4, ...rows.map(r => r.avg_persons));
-  const x = i => minutes.length > 1 ? PL + i * (W - PL) / (minutes.length - 1) : PL;
+  const cams = Object.keys(series).map(Number).sort();
+
+  legend.innerHTML = cams.map(c =>
+    `<span class="chip"><span class="swatch" style="background:${CAM_COLORS[c]||'var(--blue)'}"></span>${(CAMS[c]||{}).name || 'CAM-'+c}</span>`
+  ).join('') +
+    `<span class="chip"><span class="swatch dash"></span>${t('crowdLine')}</span>`;
+
+  const W = 270, H = 84, PL = 14, PR = 4, PB = 12, PT = 6;
+  const dataMax = Math.max(...rows.map(r => r.avg_persons));
+  const yMax = Math.max(CROWD_ALERT_AT + 1, Math.ceil(dataMax));
+  const x = i => minutes.length > 1 ? PL + i * (W - PL - PR) / (minutes.length - 1) : PL;
   const y = v => PT + (H - PT - PB) * (1 - v / yMax);
-  const colors = {1:'var(--c-cam1)', 2:'var(--c-cam2)', 3:'var(--c-cam3)'};
+
   let svg = `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">`;
-  [0.5, 1].forEach(f => {
-    svg += `<line class="gridline" x1="${PL}" y1="${y(yMax*f)}" x2="${W}" y2="${y(yMax*f)}"/>`;
-  });
+  svg += `<line class="gridline" x1="${PL}" y1="${y(0)}" x2="${W-PR}" y2="${y(0)}"/>`;
+  // crowd-alert threshold
+  svg += `<line class="threshold" x1="${PL}" y1="${y(CROWD_ALERT_AT)}" x2="${W-PR}" y2="${y(CROWD_ALERT_AT)}"/>`;
+  svg += `<text class="threshold-lbl" x="${W-PR}" y="${y(CROWD_ALERT_AT)-2}" text-anchor="end">${CROWD_ALERT_AT}</text>`;
   svg += `<text class="axis-lbl" x="0" y="${y(yMax)+3}">${yMax}</text>`;
+  svg += `<text class="axis-lbl" x="0" y="${y(0)}">0</text>`;
   svg += `<text class="axis-lbl" x="${PL}" y="${H-2}">${minutes[0].slice(11)}</text>`;
-  svg += `<text class="axis-lbl" x="${W-26}" y="${H-2}">${minutes[minutes.length-1].slice(11)}</text>`;
-  for(const cam of Object.keys(series)){
+  svg += `<text class="axis-lbl" x="${W-PR}" y="${H-2}" text-anchor="end">${minutes[minutes.length-1].slice(11)}</text>`;
+
+  for(const cam of cams){
     const pts = minutes.map((m, i) => series[cam][m] != null ? `${x(i)},${y(series[cam][m])}` : null)
                        .filter(Boolean).join(' ');
-    if(pts) svg += `<polyline points="${pts}" fill="none" stroke="${colors[cam]||'var(--blue)'}" stroke-width="2" stroke-linejoin="round"/>`;
+    if(pts) svg += `<polyline points="${pts}" fill="none" stroke="${CAM_COLORS[cam]||'var(--blue)'}" stroke-width="1.75" stroke-linejoin="round" stroke-linecap="round"/>`;
+    // emphasise the latest point
+    const last = series[cam][minutes[minutes.length-1]];
+    if(last != null)
+      svg += `<circle cx="${x(minutes.length-1)}" cy="${y(last)}" r="2" fill="${CAM_COLORS[cam]||'var(--blue)'}"/>`;
   }
-  // invisible hover strips, one per minute (wide hit targets)
   minutes.forEach((m, i) => {
-    const vals = Object.keys(series).map(cam =>
-      `CAM-0${cam}: ${series[cam][m] != null ? series[cam][m] : '–'}`).join('\n');
-    const w = (W - PL) / Math.max(minutes.length - 1, 1);
+    const vals = cams.map(c =>
+      `${(CAMS[c]||{}).name || 'CAM-'+c}: ${series[c][m] != null ? series[c][m] : '–'}`).join('\n');
+    const w = (W - PL - PR) / Math.max(minutes.length - 1, 1);
     svg += `<rect x="${x(i)-w/2}" y="0" width="${w}" height="${H}" fill="transparent" data-tip="${m.slice(11)}\n${vals}"/>`;
   });
   box.innerHTML = svg + '</svg>';
 }
 
-function renderAlertBars(rows){
-  const box = document.getElementById('alerts-chart');
-  if(!rows.length){ box.innerHTML = `<div class="chart-empty" data-i18n="noAlerts">${t('noAlerts')}</div>`; return; }
-  const W = 270, H = 70, PB = 12, PT = 4;
-  const yMax = Math.max(...rows.map(r => r.gathering + r.fall));
-  const bw = Math.min(18, (W - 4) / rows.length - 2);
-  const scale = v => v / yMax * (H - PT - PB);
-  let svg = `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">`;
-  svg += `<text class="axis-lbl" x="0" y="${PT+5}">${yMax}</text>`;
-  rows.forEach((r, i) => {
-    const xp = 14 + i * ((W - 14) / rows.length);
-    const hG = scale(r.gathering), hF = scale(r.fall);
-    let yCursor = H - PB;
-    if(r.gathering){
-      svg += `<rect x="${xp}" y="${yCursor-hG}" width="${bw}" height="${hG}" rx="1" fill="var(--amber)"/>`;
-      yCursor -= hG + 2;  // 2px surface gap between stacked segments
-    }
-    if(r.fall)
-      svg += `<rect x="${xp}" y="${yCursor-hF}" width="${bw}" height="${hF}" rx="1" fill="var(--red)"/>`;
-    svg += `<rect x="${xp-1}" y="0" width="${bw+2}" height="${H}" fill="transparent" data-tip="${r.hour.slice(11)}:00\n${t('crowdShort')}: ${r.gathering}\n${t('fallShort')}: ${r.fall}"/>`;
-    if(i === 0 || i === rows.length - 1)
-      svg += `<text class="axis-lbl" x="${xp}" y="${H-2}">${r.hour.slice(11)}h</text>`;
-  });
-  box.innerHTML = svg + '</svg>';
+// ── ALERTS BY LOCATION — which camera generates the incidents ──
+// Per-hour buckets tell an operator nothing they can act on. Per camera
+// answers "where do I need to put attention", which drives a real decision.
+function renderAlertsByLocation(data){
+  const box = document.getElementById('bycam-chart');
+  const cams = (data && data.cameras) || [];
+  const grand = cams.reduce((s, c) => s + c.crowd + c.fall, 0);
+  if(!grand){
+    box.innerHTML = `<div class="chart-empty">${t('noAlerts')}</div>`;
+    return;
+  }
+  const max = Math.max(...cams.map(c => c.crowd + c.fall), 1);
+  box.innerHTML = cams.map(c => {
+    const total = c.crowd + c.fall;
+    const cw = (c.crowd / max * 100).toFixed(1);
+    const fw = (c.fall / max * 100).toFixed(1);
+    const name = (CAMS[c.cam_id] || {}).name || 'CAM-' + c.cam_id;
+    const loc = (CAMS[c.cam_id] || {}).loc || '';
+    return `<div class="bycam-row" data-tip="${esc(name)} · ${esc(loc)}\n${t('crowdShort')}: ${c.crowd}\n${t('fallShort')}: ${c.fall}">
+      <span class="lbl">${esc(loc || name)}</span>
+      <span class="track">
+        ${c.crowd ? `<span class="seg-crowd" style="width:${cw}%"></span>` : ''}
+        ${c.fall ? `<span class="seg-fall" style="width:${fw}%"></span>` : ''}
+      </span>
+      <span class="cnt">${total || '·'}</span>
+    </div>`;
+  }).join('');
 }
 
+// ── MOVEMENT HOTSPOTS — where people cluster in one camera's frame ──
+// Summed across cameras this is meaningless; per camera it shows the traffic
+// pattern in that specific view. The peak cell is outlined.
+let _hotspotCamsLoaded = '';
 function renderZones(data){
   const grid = document.getElementById('zone-chart');
-  if(!data || !data.total){ return; }
+  const empty = document.getElementById('zone-empty');
+  const sel = document.getElementById('hotspot-cam');
+  if(!data){ return; }
+
+  // Populate the camera picker from cameras that have samples, once per set
+  const camsKey = (data.cameras || []).join(',');
+  if(sel && camsKey !== _hotspotCamsLoaded){
+    _hotspotCamsLoaded = camsKey;
+    const keep = sel.value;
+    sel.innerHTML = `<option value="">${t('allCameras')}</option>` +
+      (data.cameras || []).map(c =>
+        `<option value="${c}">${(CAMS[c]||{}).name || 'CAM-'+c}</option>`).join('');
+    if([...sel.options].some(o => o.value === keep)) sel.value = keep;
+  }
+
+  const hasData = data.total && data.max > 0;
+  grid.style.display = hasData ? 'grid' : 'none';
+  empty.style.display = hasData ? 'none' : 'block';
+  empty.textContent = t('collecting');
+  if(!hasData){ return; }
+
   const blue = getComputedStyle(document.documentElement).getPropertyValue('--blue').trim();
   grid.style.gridTemplateColumns = `repeat(${data.cols},1fr)`;
   grid.innerHTML = '';
   data.total.forEach((row, r) => row.forEach((v, c) => {
     const cell = document.createElement('div');
-    cell.className = 'zone-cell';
-    const a = data.max ? 0.08 + 0.85 * (v / data.max) : 0;
+    cell.className = 'zone-cell' + (v === data.max && v > 0 ? ' peak' : '');
+    const a = data.max ? 0.06 + 0.9 * (v / data.max) : 0;
     if(v > 0) cell.style.background =
       blue + Math.round(a * 255).toString(16).padStart(2, '0');
     cell.setAttribute('data-tip', `${t('zone')} r${r+1}c${c+1}\n${t('personsSeen')}: ${v}`);

@@ -112,7 +112,7 @@ VisionGuard/
 
 * The pose model detects all persons in the frame
 * If **4 or more persons** are in view (`CROWD_MIN_PERSONS`), a crowd alert is triggered. Clearing needs the count to fall to **2** (`CROWD_CLEAR_MARGIN`): without that hysteresis a scene hovering on the threshold flaps in and out of alert every few seconds and logs each flap as a fresh incident
-* Independently, the frame is divided into a 3×4 grid; each person is assigned to the cell containing their bounding box centre, cells with 3 or more persons are highlighted red, and the zone counts feed the analytics heatmap
+* Independently, the frame is divided into a 3×4 grid; each person is assigned to the cell containing their bounding box centre, cells with 3 or more persons are highlighted red, and the zone counts feed the movement-hotspots panel
 
 ### Fall detection
 
@@ -220,11 +220,11 @@ SQLite file at `crowd_events.db`. **History persists across restarts** so the an
 
 Schema changes are applied to existing databases via lightweight `ALTER TABLE` migrations at startup, so history is never wiped for a schema change.
 
-**`occupancy_samples`**: `id, cam_id, timestamp, person_count, max_density, zones`. Every 10 s each camera logs how many people it sees and a JSON 3×4 grid of zone counts. This powers the dashboard's analytics panels:
+**`occupancy_samples`**: `id, cam_id, timestamp, person_count, max_density, zones`. Every 10 s each camera logs how many people it sees and a JSON 3×4 grid of zone counts. This powers the dashboard's analytics panels, each written to answer a question an operator or supervisor acts on:
 
-* **Occupancy trend**: average persons per minute, per camera (last 30 min)
-* **Alerts per hour**: stacked gathering and fall counts (last 12 h)
-* **Zone density heatmap**: where people actually accumulate, summed over the window
+* **Occupancy** — people in view over time, per camera, with the crowd-alert threshold drawn as a dashed line. A line climbing toward it is a cue to check that feed *before* the alert fires.
+* **Alerts by location** — a horizontal bar per camera, split crowd / fall, over 24 h. Answers *where do the incidents happen* — the input to deciding where to post a guard or improve a location — rather than which hour of the day they fell in.
+* **Movement hotspots** — the 3×4 zone grid for one selected camera, peak cell outlined. Summed across cameras this mixes unrelated scenes; per camera it shows the traffic pattern in that specific view.
 
 ## Setup and Running
 
@@ -279,8 +279,9 @@ All endpoints are served at `http://127.0.0.1:8000`.
 | `GET` | `/alerts/recent?limit=N` | Recent alerts from both detectors, newest first (default 50). |
 | `WS` | `/ws/alerts` | WebSocket that pushes every alert state transition as JSON the instant it happens. |
 | `GET` | `/analytics/occupancy?minutes=N` | Average persons per minute per camera (default 30 min). |
-| `GET` | `/analytics/alerts?hours=N` | Alert counts per hour for both detectors (default 12 h). |
-| `GET` | `/analytics/zones?minutes=N` | Summed zone person counts for the heatmap (default 30 min). |
+| `GET` | `/analytics/by_camera?hours=N` | Alert counts per camera, split by type, sorted busiest first (default 24 h). |
+| `GET` | `/analytics/zones?minutes=N&cam_id=C` | Summed zone person counts; `cam_id` scopes it to one camera (default 30 min, all cameras). |
+| `GET` | `/analytics/alerts?hours=N` | Alert counts per hour for both detectors (default 12 h). Retained; superseded on the dashboard by `/analytics/by_camera`. |
 | `POST` | `/alerts/clear` | Delete all rows from all tables and reset ID counters. |
 
 ## Configuration

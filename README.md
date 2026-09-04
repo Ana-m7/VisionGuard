@@ -176,9 +176,9 @@ On startup every pre-existing alert is retired to the top of the ladder, so rest
 
 **Conditions versus incidents.** Escalation runs 15 to 30 seconds after an alert, by which time the situation may have ended — so whether an ended situation is still worth notifying depends on what kind of thing it was.
 
-*Crowd gathering is a condition.* If the detector has since written a clear row, the crowd dispersed and there is nothing left to attend to. Notifying then puts a message on a phone about a scene that already looks normal, which from the recipient's side is indistinguishable from a random alarm, so it is suppressed.
+*A fall is an incident.* It is over in about a second by its nature — the person is on the ground, or they got up. Suppressing falls for having ended would suppress every fall the system will ever see, so falls always escalate.
 
-*A fall is an incident.* It is over in about a second by its nature — the person is on the ground, or they got up. Suppressing falls for having ended would suppress every fall the system will ever see, so they always escalate.
+*A crowd gathering is a condition.* Whether a crowd that has since dispersed still warrants a notification is a judgement call, exposed as `ESCALATE_ENDED_CROWDS`. When `False`, a crowd that cleared before anyone was notified is treated as a non-event. When `True` (the default), the operator is still told "there was an unhandled gathering at CAM-02" — necessary for looping demo footage, whose crowd scenes are too short to reach the escalation delay while still active.
 
 **Repeats are grouped.** At most one notification per camera, per alert type, per rung, per `NOTIFY_GROUP_SECONDS` (default 90). A repeating situation raises a genuine alert each time, and every one is recorded and escalated — but sending all of them turns a phone into a nuisance and trains the operator to ignore it.
 
@@ -313,6 +313,7 @@ Everything lives in **`config.py`**:
 | `ESCALATE_GUARD_SECONDS` | `15` | Unacknowledged time before guards are notified |
 | `ESCALATE_ADMIN_SECONDS` | `30` | Unacknowledged time before administrators are notified |
 | `ESCALATION_SCAN_SECONDS` | `3` | How often the escalation sweep runs |
+| `ESCALATE_ENDED_CROWDS` | `True` | Escalate a crowd alert even if the crowd has since dispersed |
 | `ESCALATE_MAX_AGE_SECONDS` | `300` | Alerts older than this never escalate, so a backlog cannot fire a burst |
 | `ACK_SUPPRESS_SECONDS` | `120` | After an acknowledgement, further alerts of that type on that camera do not notify for this long |
 | `NOTIFY_GROUP_SECONDS` | `90` | At most one notification per camera, alert type and rung in this window |

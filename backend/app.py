@@ -72,6 +72,19 @@ async def lifespan(app: FastAPI):
     # The escalation sweep pushes its events onto the same queue the camera
     # threads use, so escalations reach dashboards over the existing socket.
     escalator = asyncio.create_task(escalation_loop(alert_queue.put))
+
+    # A background task that raises is otherwise silent — its exception sits
+    # unretrieved and the loop simply stops. Surface it loudly instead.
+    def _task_died(task, name):
+        if task.cancelled():
+            return
+        exc = task.exception()
+        if exc:
+            print(f"!! {name} STOPPED with an error: {exc!r} — "
+                  f"that feature is now dead until the server restarts")
+    broadcaster.add_done_callback(lambda t: _task_died(t, "alert broadcaster"))
+    escalator.add_done_callback(lambda t: _task_died(t, "escalation loop"))
+
     yield
     broadcaster.cancel()
     escalator.cancel()

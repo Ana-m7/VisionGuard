@@ -120,6 +120,15 @@ RESET_USERS_ON_START = False
 ESCALATE_GUARD_SECONDS = 15
 ESCALATE_ADMIN_SECONDS = 30
 ESCALATION_SCAN_SECONDS = 3   # how often the background scanner sweeps
+
+# When True, a crowd alert escalates even if the crowd has since dispersed —
+# the operator is still told "there was an unhandled gathering at CAM-02".
+# When False, a crowd that cleared before anyone was notified is treated as
+# a non-event and suppressed. Falls always escalate regardless (a fall is
+# over in a second by nature). Set True for looping demo footage, whose
+# crowd scenes are too short to ever reach the escalation delay while still
+# active.
+ESCALATE_ENDED_CROWDS = True
 # After an operator acknowledges an alert, further alerts of that same type
 # on that same camera stay silent for this long. A continuing situation keeps
 # producing alerts — a looping demo clip re-raises one every few seconds, and

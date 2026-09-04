@@ -43,10 +43,15 @@ from backend.notify import notifier
 #   person is on the ground, or they got up. Suppressing it because it "ended"
 #   would suppress every fall the system will ever see, which is the one thing
 #   this system exists to report.
-TABLES = {
-    "gathering": ("crowd_events", "is_alert", "CROWD GATHERING", True),
-    "fall": ("fall_events", "is_fall", "FALL DETECTED", False),
-}
+def _tables():
+    """Rebuilt each sweep so the ESCALATE_ENDED_CROWDS flag can be flipped
+    without a restart. `only_while_active` = suppress if the situation has
+    since cleared."""
+    return {
+        "gathering": ("crowd_events", "is_alert", "CROWD GATHERING",
+                      not config.ESCALATE_ENDED_CROWDS),
+        "fall": ("fall_events", "is_fall", "FALL DETECTED", False),
+    }
 
 LEVEL_GUARD, LEVEL_ADMIN = 1, 2
 
@@ -165,7 +170,7 @@ def _escalate_once(push_event):
         for level, seconds in ((LEVEL_GUARD, config.ESCALATE_GUARD_SECONDS),
                                (LEVEL_ADMIN, config.ESCALATE_ADMIN_SECONDS)):
             people = _recipients(level)
-            for alert_type, (table, flag, label, only_active) in TABLES.items():
+            for alert_type, (table, flag, label, only_active) in _tables().items():
                 for row in _due(conn, table, flag, level, seconds, only_active):
                     if not _claim(conn, table, row["id"], level):
                         continue                      # another sweep took it
@@ -204,12 +209,22 @@ async def escalation_loop(push_event):
     """Background sweep. Sleeps between passes so it costs nothing when the
     system is quiet, and never lets an exception kill the loop."""
     print(f"Escalation ladder active: guard at {config.ESCALATE_GUARD_SECONDS}s, "
-          f"administrator at {config.ESCALATE_ADMIN_SECONDS}s")
+          f"administrator at {config.ESCALATE_ADMIN_SECONDS}s "
+          f"(sweeping every {config.ESCALATION_SCAN_SECONDS}s)", flush=True)
+    sweeps = 0
     while True:
         try:
-            await asyncio.to_thread(_escalate_once, push_event)
+            n = await asyncio.to_thread(_escalate_once, push_event)
+            sweeps += 1
+            # A quiet heartbeat every ~2 min proves the loop is alive even
+            # when nothing is escalating.
+            if n or sweeps % max(1, int(120 / config.ESCALATION_SCAN_SECONDS)) == 0:
+                print(f"[escalation] sweep #{sweeps}: {n} alert(s) escalated",
+                      flush=True)
         except asyncio.CancelledError:
             raise
         except Exception as e:
-            print(f"Escalation sweep failed: {e}")
+            import traceback
+            print(f"[escalation] sweep FAILED: {e}", flush=True)
+            traceback.print_exc()
         await asyncio.sleep(config.ESCALATION_SCAN_SECONDS)

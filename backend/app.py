@@ -7,6 +7,7 @@ directly — frames are encoded exactly once in the whole pipeline.
 """
 import asyncio
 import json
+import logging
 import os
 import queue
 import sys
@@ -27,9 +28,20 @@ import uvicorn
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import config
+from log_setup import camera_name, log_alert, setup_logging
+
+# Configured here, before the imports below, because backend.notify picks and
+# announces its transport at import time — under the lifespan alone that line
+# (and the __main__ "Opening …" line) would be logged before any handler
+# existed and silently dropped. setup_logging() is idempotent, so the lifespan
+# call is a no-op when this has already run.
+setup_logging()
+
 from detector.engine import FrameStore, LiveStats, alert_queue, init_db, start_engine
 from backend import auth
 from backend.escalation import escalation_loop
+
+logger = logging.getLogger("visionguard.api")
 
 frame_store = FrameStore()
 live_stats = LiveStats()
@@ -60,18 +72,60 @@ async def broadcast_alerts():
         ws_clients.difference_update(dead)
 
 
+# ================================================================
+# CAMERA HEALTH MONITOR
+# ================================================================
+# Cameras the monitor has announced as offline. Reported in /stats alongside
+# the raw status so a dashboard that missed the push can catch up — the raw
+# `online` flag alone would also flag cameras still starting up, which the
+# monitor's grace period deliberately does not.
+reported_offline = set()
+
+
+async def camera_monitor():
+    """Report a camera going offline (no frame for CAMERA_OFFLINE_TIMEOUT) and
+    coming back, on state change only. The first sweep waits one full timeout
+    so cameras still starting up are not reported. Reading the FrameStore
+    timestamps is a dict scan under a lock, so this runs on the event loop."""
+    await asyncio.sleep(config.CAMERA_OFFLINE_TIMEOUT + config.CAMERA_MONITOR_INTERVAL)
+    reported_offline.clear()
+    while True:
+        try:
+            stale = set(frame_store.stale_cameras())
+            now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            for cam_id in sorted(stale - reported_offline):
+                msg = f"{camera_name(cam_id)} has stopped sending frames"
+                log_alert(logger, logging.WARNING, "ALERT", "offline", cam_id,
+                          f"no frames for {config.CAMERA_OFFLINE_TIMEOUT}s or more")
+                alert_queue.put({"type": "camera_offline", "cam_id": cam_id,
+                                 "timestamp": now, "message": msg})
+            for cam_id in sorted(reported_offline - stale):
+                msg = f"{camera_name(cam_id)} is back online"
+                log_alert(logger, logging.INFO, "CLEARED", "offline", cam_id,
+                          "frames arriving again")
+                alert_queue.put({"type": "camera_online", "cam_id": cam_id,
+                                 "timestamp": now, "message": msg})
+            reported_offline.clear()
+            reported_offline.update(stale)
+        except Exception as e:   # one bad sweep must not kill the monitor
+            logger.error("Camera monitor sweep failed: %r", e, exc_info=True)
+        await asyncio.sleep(config.CAMERA_MONITOR_INTERVAL)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    setup_logging()
     init_db()
     auth.init_auth_db()
     auth.purge_expired_sessions()
     if auth.user_count() == 0:
-        print("No accounts yet — open the dashboard to register the administrator.")
+        logger.warning("No accounts yet — open the dashboard to register the administrator.")
     start_engine(frame_store, live_stats)
     broadcaster = asyncio.create_task(broadcast_alerts())
     # The escalation sweep pushes its events onto the same queue the camera
     # threads use, so escalations reach dashboards over the existing socket.
     escalator = asyncio.create_task(escalation_loop(alert_queue.put))
+    monitor = asyncio.create_task(camera_monitor())
 
     # A background task that raises is otherwise silent — its exception sits
     # unretrieved and the loop simply stops. Surface it loudly instead.
@@ -80,14 +134,17 @@ async def lifespan(app: FastAPI):
             return
         exc = task.exception()
         if exc:
-            print(f"!! {name} STOPPED with an error: {exc!r} — "
-                  f"that feature is now dead until the server restarts")
+            logger.critical(
+                "%s STOPPED with an error: %r — that feature is now dead "
+                "until the server restarts", name, exc, exc_info=exc)
     broadcaster.add_done_callback(lambda t: _task_died(t, "alert broadcaster"))
     escalator.add_done_callback(lambda t: _task_died(t, "escalation loop"))
+    monitor.add_done_callback(lambda t: _task_died(t, "camera monitor"))
 
     yield
     broadcaster.cancel()
     escalator.cancel()
+    monitor.cancel()
 
 
 app = FastAPI(title="VisionGuard", lifespan=lifespan)
@@ -352,15 +409,33 @@ def get_stats(user=Depends(current_user)):
     conn.close()
 
     live = live_stats.snapshot()
+    cam_status = _camera_status()
     return {
         "alert_count": alert_count,
         "frames_processed": live["frames_processed"],
         "persons_now": live["persons_now"],
-        "cameras_live": len(live["cameras"]),
+        "cameras_live": sum(1 for s in cam_status.values() if s["online"]),
         "cameras_total": len(config.VIDEO_SOURCES),
+        "camera_status": cam_status,
         "detection_fps": live["detection_fps"],
         "avg_latency_ms": live["avg_latency_ms"],
     }
+
+
+@app.get("/cameras/status")
+def cameras_status(user=Depends(current_user)):
+    """Per-camera health: online flag, last frame time, seconds since."""
+    return [{"cam_id": cam_id,
+             "label": config.CAMERA_LABELS.get(cam_id, f"CAM-{cam_id:02d}"),
+             **info}
+            for cam_id, info in _camera_status().items()]
+
+
+def _camera_status():
+    """FrameStore status plus whether the monitor has announced the camera
+    offline — the flag the dashboard alerts on."""
+    return {cam_id: {**s, "offline_alert": cam_id in reported_offline}
+            for cam_id, s in frame_store.camera_status().items()}
 
 
 # ================================================================
@@ -592,6 +667,12 @@ def acknowledge_alert(type: str, id: int, user=Depends(current_user)):
     updated = cur.rowcount
     conn.commit()
     conn.close()
+    detail = f"by {user['username']}"
+    if updated > 1:
+        detail += f", plus {updated - 1} earlier unacknowledged on this camera"
+    elif updated == 0:
+        detail += " (already acknowledged)"
+    log_alert(logger, logging.INFO, "ACK", type, row["cam_id"], detail, id)
     return {"ok": True, "acknowledged_at": when, "acknowledged": updated}
 
 
@@ -614,6 +695,8 @@ def acknowledge_all(user=Depends(current_user)):
         total += cur.rowcount
     conn.commit()
     conn.close()
+    logger.info("%-9s %-16s %d outstanding alert(s) — by %s (Clear Alerts)",
+                "ACK", "ALL", total, user["username"])
     return {"ok": True, "acknowledged": total, "acknowledged_at": when}
 
 
@@ -666,6 +749,7 @@ def clear_alerts(user=Depends(require_admin)):
                 "('crowd_events', 'fall_events', 'occupancy_samples')")
     conn.commit()
     conn.close()
+    logger.warning("Alert history deleted by %s (Clear History)", user["username"])
     return {"ok": True}
 
 
@@ -678,7 +762,7 @@ if __name__ == "__main__":
 
     url = f"http://{config.HOST}:{config.PORT}"
     threading.Timer(1.5, lambda: webbrowser.open(url)).start()
-    print(f"Opening {url} in your browser…")
+    logger.info("Opening %s in your browser...", url)
 
     # No auto-reload: the detector threads live in this process, and a
     # reload supervisor would restart them on every file change.

@@ -11,7 +11,9 @@ ROOT = os.path.dirname(os.path.abspath(__file__))
 # cam_id → video source. An int (e.g. 0) selects a local webcam,
 # a string path selects a video file, an rtsp:// URL selects an IP camera.
 VIDEO_SOURCES = {
-    2: os.path.join(ROOT, "videos", "video2.mp4"),
+    # Video file disconnected — live webcam only. To reconnect, uncomment
+    # this line and add 2 back to ACTIVE_CAMS in frontend/dashboard.html:
+    # 2: os.path.join(ROOT, "videos", "video2.mp4"),
     # video2.mp4 is the clip that exercises both detectors. Two other clips
     # were evaluated and set aside, and are not shipped in the repository:
     # video3.mp4 contains no fall at all, and video4.mp4 films a walkway from
@@ -42,8 +44,8 @@ if ENABLE_WEBCAM:
 # 92-100% of frames while inference cost is cut roughly in half.
 POSE_MODEL_PATH = os.path.join(ROOT, "models", "yolov8n-pose.pt")
 
-CROWD_MIN_PERSONS = 4     # total persons in frame to trigger a crowd alert
-CROWD_CLEAR_MARGIN = 2    # hysteresis: once alerting, the count must fall to
+CROWD_MIN_PERSONS = 2    # total persons in frame to trigger a crowd alert
+CROWD_CLEAR_MARGIN = 1   # hysteresis: once alerting, the count must fall to
                           # CROWD_MIN_PERSONS - this before the alert clears.
                           # Without it a scene hovering on the threshold
                           # (3-4-3-4 people) flaps in and out of alert every
@@ -88,6 +90,33 @@ FALL_CONFIRM_FRAMES = 2     # consecutive detection cycles (same person)
 FRAME_SIZE = (480, 270)   # resolution pushed to the dashboard
 JPEG_QUALITY = 75
 STREAM_INTERVAL = 0.05    # seconds between MJPEG frames sent to the browser
+
+# ── Camera health monitoring ─────────────────────────────────────
+CAMERA_OFFLINE_TIMEOUT = 10    # seconds of silence → camera offline
+CAMERA_MONITOR_INTERVAL = 5    # how often the health monitor runs
+
+# Tamper detection runs on every captured frame, so it works on a small
+# nearest-neighbour sample of the frame rather than the full image. Nearest
+# sampling keeps each sampled pixel's real value (no averaging), so the
+# brightness and per-pixel-difference thresholds below mean the same thing
+# they would at full resolution, at a fraction of the cost.
+TAMPER_SAMPLE_SIZE = (320, 180)     # (w, h) of the analysed sample
+TAMPER_BLACKOUT_THRESHOLD = 15      # mean pixel brightness below this → covered
+TAMPER_UNIFORM_STD = 20             # contrast (grey std dev) below this → covered.
+                                    # A webcam's auto-exposure brightens a hand
+                                    # over the lens well above the blackout
+                                    # threshold, but the image stays featureless.
+                                    # Normal scene on the project webcam: 61-65.
+TAMPER_COVERED_CONFIRM_FRAMES = 10  # consecutive dark frames before alert (~400ms)
+TAMPER_FROZEN_PIXEL_DIFF = 15       # per-pixel diff below this = sensor noise
+TAMPER_FROZEN_CHANGE_RATIO = 0.001  # fraction of pixels that must differ
+TAMPER_FROZEN_CONFIRM_FRAMES = 15   # consecutive frozen reads before alert (~600ms)
+
+# ── Logging ──────────────────────────────────────────────────────
+LOG_DIR = os.path.join(ROOT, "logs")
+LOG_LEVEL = "INFO"               # DEBUG | INFO | WARNING | ERROR
+LOG_MAX_BYTES = 5 * 1024 * 1024  # rotate at 5 MB
+LOG_BACKUP_COUNT = 3             # keep 3 rotated files → 15 MB ceiling
 
 # ── Storage ──────────────────────────────────────────────────────
 EVIDENCE_DIR = os.path.join(ROOT, "evidence_frames")

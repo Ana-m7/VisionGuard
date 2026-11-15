@@ -10,6 +10,7 @@ Annotated frames are JPEG-encoded exactly once and placed in the shared
 FrameStore that the backend serves as MJPEG. No HTTP hop, no re-encoding.
 """
 import json
+import logging
 import math
 import os
 import queue
@@ -23,6 +24,9 @@ import cv2
 from ultralytics import YOLO
 
 import config
+from log_setup import log_alert
+
+logger = logging.getLogger("visionguard.engine")
 
 
 # ================================================================
@@ -33,15 +37,47 @@ class FrameStore:
 
     def __init__(self):
         self._frames = {}
+        self._last_seen = {}   # cam_id → time.time() of the last published frame
+        self._tamper = {}      # cam_id → current tamper type ("covered"/"frozen")
         self._lock = threading.Lock()
 
     def set(self, cam_id, jpeg_bytes):
         with self._lock:
             self._frames[cam_id] = jpeg_bytes
+            self._last_seen[cam_id] = time.time()
 
     def get(self, cam_id):
         with self._lock:
             return self._frames.get(cam_id)
+
+    def set_tamper(self, cam_id, tamper_type):
+        """Current tamper state, so a dashboard that missed the WebSocket
+        push (opened later, reconnecting) still learns of it from /stats."""
+        with self._lock:
+            self._tamper[cam_id] = tamper_type
+
+    def camera_status(self):
+        """Per configured camera: online flag, last frame time, seconds since,
+        current tamper type. A camera that has never published is offline."""
+        now = time.time()
+        with self._lock:
+            result = {}
+            for cam_id in config.VIDEO_SOURCES:
+                last = self._last_seen.get(cam_id)
+                result[cam_id] = {
+                    "online": (last is not None
+                               and now - last < config.CAMERA_OFFLINE_TIMEOUT),
+                    "last_seen": round(last, 3) if last is not None else None,
+                    "seconds_since": round(now - last, 1) if last is not None else None,
+                    "tamper": self._tamper.get(cam_id),
+                }
+            return result
+
+    def stale_cameras(self):
+        """Configured cameras with no frame within CAMERA_OFFLINE_TIMEOUT —
+        derived from camera_status() so the two can never disagree."""
+        return [cam_id for cam_id, s in self.camera_status().items()
+                if not s["online"]]
 
 
 class LiveStats:
@@ -80,6 +116,96 @@ class LiveStats:
 # Alert events (state transitions) for real-time push to the dashboard.
 # Camera threads put dicts here; the backend's broadcaster consumes them.
 alert_queue = queue.Queue()
+
+
+# ================================================================
+# TAMPER DETECTION — covered lens and frozen/replayed feed
+# ================================================================
+TAMPER_LABELS = {"covered": "COVERED LENS", "frozen": "FROZEN FEED"}
+
+
+class TamperDetector:
+    """Per-camera tamper check, run by the capture thread on every raw frame.
+
+    Covered lens: mean brightness below TAMPER_BLACKOUT_THRESHOLD, or contrast
+    (grey std dev) below TAMPER_UNIFORM_STD — a hand over a webcam is not dark
+    once auto-exposure compensates, but it is featureless — for
+    TAMPER_COVERED_CONFIRM_FRAMES frames in a row.
+    Frozen feed: fewer than TAMPER_FROZEN_CHANGE_RATIO of pixels change by more
+    than the noise floor between consecutive frames, for
+    TAMPER_FROZEN_CONFIRM_FRAMES frames in a row. Covered takes precedence —
+    a black frame is also a still one.
+
+    Works on a TAMPER_SAMPLE_SIZE nearest-neighbour sample, so the per-frame
+    cost stays well under a millisecond whatever the source resolution.
+    """
+
+    def __init__(self):
+        self.reset()
+
+    def reset(self):
+        self._prev_gray = None
+        self._covered_streak = 0
+        self._frozen_streak = 0
+        self.brightness = self.contrast = 0.0   # last frame's stats, for logs
+
+    def check(self, frame):
+        """Returns "covered", "frozen", or None for this frame."""
+        small = cv2.resize(frame, config.TAMPER_SAMPLE_SIZE,
+                           interpolation=cv2.INTER_NEAREST)
+        gray = cv2.cvtColor(small, cv2.COLOR_BGR2GRAY)
+
+        mean, std = cv2.meanStdDev(gray)        # one pass for both stats
+        self.brightness, self.contrast = float(mean[0, 0]), float(std[0, 0])
+        if (self.brightness < config.TAMPER_BLACKOUT_THRESHOLD
+                or self.contrast < config.TAMPER_UNIFORM_STD):
+            self._covered_streak += 1
+            self._frozen_streak = 0
+            self._prev_gray = gray   # valid reference once the lens is uncovered
+            if self._covered_streak >= config.TAMPER_COVERED_CONFIRM_FRAMES:
+                return "covered"
+            return None
+        self._covered_streak = 0
+
+        if self._prev_gray is not None:
+            diff = cv2.absdiff(gray, self._prev_gray)
+            _, changed = cv2.threshold(
+                diff, config.TAMPER_FROZEN_PIXEL_DIFF, 255, cv2.THRESH_BINARY)
+            if cv2.countNonZero(changed) < config.TAMPER_FROZEN_CHANGE_RATIO * gray.size:
+                self._frozen_streak += 1
+            else:
+                self._frozen_streak = 0
+        self._prev_gray = gray       # next frame compares against this one
+
+        if self._frozen_streak >= config.TAMPER_FROZEN_CONFIRM_FRAMES:
+            return "frozen"
+        return None
+
+
+TAMPER_DETAILS = {"covered": "lens covered or blocked",
+                  "frozen": "feed frozen or replayed"}
+
+
+def tamper_event(cam_id, tamper_type, brightness=None, contrast=None, previous=None):
+    """WebSocket event for a tamper state transition (None = cleared).
+    previous is the tamper type being cleared, so the log says what ended.
+    brightness/contrast are the triggering frame's stats, logged so the
+    thresholds can be tuned against a real camera."""
+    ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    stats = (f" (brightness {brightness:.0f}, contrast {contrast:.0f})"
+             if brightness is not None else "")
+    if tamper_type:
+        label = TAMPER_LABELS[tamper_type]
+        log_alert(logger, logging.WARNING, "ALERT", "tamper", cam_id,
+                  TAMPER_DETAILS[tamper_type] + stats)
+        message = f"CAM-{cam_id:02d} — {label} detected"
+    else:
+        was = f"was {TAMPER_DETAILS[previous]}" if previous else "condition ended"
+        log_alert(logger, logging.INFO, "CLEARED", "tamper", cam_id, was + stats)
+        message = f"CAM-{cam_id:02d} — tamper condition cleared"
+    return {"type": "camera_tamper", "tamper_type": tamper_type,
+            "cam_id": cam_id, "timestamp": ts,
+            "is_alert": int(tamper_type is not None), "message": message}
 
 
 # ================================================================
@@ -445,7 +571,7 @@ def annotate(frame, cam_id, ov):
 def capture_thread(cam_id, source, frame_store, latest, overlay):
     cap = cv2.VideoCapture(source)
     if not cap.isOpened():
-        print(f"ERROR opening camera source: {source}")
+        logger.error("CAM-%02d failed to open source: %s", cam_id, source)
         return
 
     src_fps = cap.get(cv2.CAP_PROP_FPS) or 25
@@ -454,7 +580,9 @@ def capture_thread(cam_id, source, frame_store, latest, overlay):
     # Recent frames, so the display can be held back to match the overlay
     history = deque(maxlen=MAX_DISPLAY_LAG_FRAMES + 1)
     display_lag = 0.0
-    print(f"CAM-{cam_id:02d} started: {source} ({src_fps:.1f} fps)")
+    tamper = TamperDetector()
+    tamper_state = None
+    logger.info("CAM-%02d started: %s (%.1f fps)", cam_id, source, src_fps)
 
     while True:
         t_start = time.time()
@@ -470,7 +598,17 @@ def capture_thread(cam_id, source, frame_store, latest, overlay):
             latest.new_generation()
             history.clear()                      # don't show the previous pass
             display_lag = 0.0
+            tamper.reset()                       # no diff across the loop seam
             continue
+
+        # Tamper check on the raw frame, before it is handed off. Alerts only
+        # on a state change, like the crowd and fall detectors.
+        tamper_type = tamper.check(frame)
+        if tamper_type != tamper_state:
+            previous, tamper_state = tamper_state, tamper_type
+            frame_store.set_tamper(cam_id, tamper_type)
+            alert_queue.put(tamper_event(cam_id, tamper_type, tamper.brightness,
+                                         tamper.contrast, previous))
 
         seq = latest.put(frame)                 # hand off for inference
         history.append((seq, frame))
@@ -584,9 +722,6 @@ def inference_thread(cam_id, latest, overlay, live_stats):
                     os.path.join(config.EVIDENCE_DIR, evidence),
                     stamp_evidence(annotated,
                                    f"EVIDENCE  CROWD GATHERING  CAM-{cam_id:02d}  {timestamp}"))
-                print(f"[{timestamp}] CAM-{cam_id:02d} CROWD ALERT — {person_count} persons")
-            elif crowd_state is not None:
-                print(f"[{timestamp}] CAM-{cam_id:02d} crowd cleared")
             if crowd_state is not None or crowd_alert:
                 cur.execute(
                     """INSERT INTO crowd_events
@@ -595,6 +730,14 @@ def inference_thread(cam_id, latest, overlay, live_stats):
                     (cam_id, timestamp, person_count, max_density,
                      int(crowd_alert), evidence))
                 conn.commit()
+                # logged after the insert so the line carries the row id
+                people = f"{person_count} person{'' if person_count == 1 else 's'} in view"
+                if crowd_alert:
+                    log_alert(logger, logging.WARNING, "ALERT", "gathering", cam_id,
+                              f"{people}, peak zone {max_density}", cur.lastrowid)
+                else:
+                    log_alert(logger, logging.INFO, "CLEARED", "gathering", cam_id,
+                              people, cur.lastrowid)
                 alert_queue.put({
                     "type": "gathering", "id": cur.lastrowid,
                     "cam_id": cam_id, "timestamp": timestamp,
@@ -615,11 +758,6 @@ def inference_thread(cam_id, latest, overlay, live_stats):
                     os.path.join(config.EVIDENCE_DIR, evidence),
                     stamp_evidence(annotated,
                                    f"EVIDENCE  FALL DETECTED  CAM-{cam_id:02d}  {timestamp}"))
-                detail = (f"torso {fall_angle:.0f} deg" if fall_angle is not None
-                          else f"ratio {fall_ratio:.2f}")
-                print(f"[{timestamp}] CAM-{cam_id:02d} FALL DETECTED ({detail})")
-            else:
-                print(f"[{timestamp}] CAM-{cam_id:02d} fall cleared")
             cur.execute(
                 """INSERT INTO fall_events
                    (cam_id, timestamp, is_fall, ratio, angle, frame_path)
@@ -628,6 +766,14 @@ def inference_thread(cam_id, latest, overlay, live_stats):
                  round(fall_angle, 1) if fall_angle is not None else None,
                  evidence))
             conn.commit()
+            if fall_alert:
+                detail = (f"torso {fall_angle:.0f} deg off vertical"
+                          if fall_angle is not None else f"box ratio {fall_ratio:.2f}")
+                log_alert(logger, logging.WARNING, "ALERT", "fall", cam_id,
+                          detail, cur.lastrowid)
+            else:
+                log_alert(logger, logging.INFO, "CLEARED", "fall", cam_id,
+                          "no one detected as down any more", cur.lastrowid)
             alert_queue.put({
                 "type": "fall", "id": cur.lastrowid,
                 "cam_id": cam_id, "timestamp": timestamp,
@@ -671,6 +817,8 @@ def start_engine(frame_store, live_stats):
             t = threading.Thread(target=target, args=args, daemon=True)
             t.start()
             threads.append(t)
-    print(f"Detection engine started with {len(config.VIDEO_SOURCES)} camera(s), "
-          f"{len(threads)} threads.")
+    logger.info(
+        "Detection engine started — %d camera(s), %d threads",
+        len(config.VIDEO_SOURCES), len(threads),
+    )
     return threads

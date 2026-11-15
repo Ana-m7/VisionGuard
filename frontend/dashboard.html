@@ -45,10 +45,13 @@ html,body{height:100%;font-family:var(--sans);background:var(--bg);color:var(--t
 .user-role{font-size:9px;color:var(--text3);border:0.5px solid var(--border);border-radius:3px;padding:1px 6px}
 
 /* ── USER MANAGEMENT ── */
-.users-modal{width:520px}
-.utable{width:100%;border-collapse:collapse;font-size:11px;margin-bottom:14px}
-.utable th{font-family:var(--mono);font-size:9px;letter-spacing:.5px;color:var(--text2);text-transform:uppercase;text-align:left;padding:5px 6px;border-bottom:0.5px solid var(--border)}
+.users-modal{width:640px;max-width:95vw}
+.users-modal .modal-body{max-height:calc(100vh - 140px);overflow-y:auto}
+.utable-wrap{overflow-x:auto;margin-bottom:14px}
+.utable{width:100%;border-collapse:collapse;font-size:11px}
+.utable th{font-family:var(--mono);font-size:9px;letter-spacing:.5px;color:var(--text2);text-transform:uppercase;text-align:left;padding:5px 6px;border-bottom:0.5px solid var(--border);white-space:nowrap}
 .utable td{padding:6px;border-bottom:0.5px solid var(--border);font-family:var(--mono);color:var(--text)}
+.utable td.uname{max-width:190px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .utable tr:last-child td{border-bottom:none}
 .urole{font-size:9px;border-radius:3px;padding:1px 6px;border:0.5px solid var(--border)}
 .urole.admin{color:var(--blue);border-color:var(--blue)}
@@ -88,6 +91,8 @@ html,body{height:100%;font-family:var(--sans);background:var(--bg);color:var(--t
 .cam{background:var(--surf);border:1px solid var(--border);border-radius:8px;overflow:hidden;position:relative;transition:border-color .2s}
 .cam.a-gathering{border-color:var(--amber)}
 .cam.a-fall{border-color:var(--red)}
+.cam.a-tamper{border-color:#bc8cff}
+.cam.a-offline{border-color:#8b949e}
 .cam-head{display:flex;align-items:center;justify-content:space-between;padding:6px 8px;background:var(--surf2);border-bottom:0.5px solid var(--border)}
 .cam-id{font-family:var(--mono);font-size:10px;color:var(--text2)}
 .cam-controls{display:flex;align-items:center;gap:6px}
@@ -103,6 +108,8 @@ html,body{height:100%;font-family:var(--sans);background:var(--bg);color:var(--t
 @keyframes bdgBlink{0%,100%{opacity:1}50%{opacity:.5}}
 .cam-badge.gathering{background:#e3b341;color:#1a0f00}
 .cam-badge.fall{background:#f85149}
+.cam-badge.tamper{background:#bc8cff;color:#1a0b2e}
+.cam-badge.offline{background:#8b949e;color:#0d1117}
 .cam-foot{position:absolute;bottom:0;left:0;right:0;padding:3px 8px;background:rgba(0,0,0,.6);display:flex;justify-content:space-between;z-index:6}
 .cam-foot span{font-family:var(--mono);font-size:8px;color:#2a4a6a}
 /* Lives in the tile header, not over the video — it used to sit on top of
@@ -127,6 +134,8 @@ html,body{height:100%;font-family:var(--sans);background:var(--bg);color:var(--t
 .evt-ic{width:24px;height:24px;border-radius:5px;display:flex;align-items:center;justify-content:center;font-size:8px;letter-spacing:.5px;flex-shrink:0;font-family:var(--mono);font-weight:600}
 .evt-ic.gathering{background:var(--bg-amber);color:var(--amber)}
 .evt-ic.fall{background:var(--bg-red);color:var(--red)}
+.evt-ic.tamper{background:rgba(188,140,255,.15);color:#bc8cff}
+.evt-ic.offline{background:rgba(139,148,158,.15);color:#8b949e}
 .evt-ic.ok{background:var(--bg-green);color:var(--green)}
 .evt-ic.esc{background:var(--bg-orange);color:var(--orange)}
 .evt-body{flex:1;min-width:0}
@@ -385,13 +394,15 @@ html,body{height:100%;font-family:var(--sans);background:var(--bg);color:var(--t
       <button class="mcl" onclick="closeUsers()">&times;</button>
     </div>
     <div class="modal-body">
-      <table class="utable">
-        <thead><tr>
-          <th data-i18n="uName">Full name</th><th data-i18n="uUsername">Username</th>
-          <th data-i18n="uRole">Role</th><th data-i18n="uContact">Contact</th><th></th>
-        </tr></thead>
-        <tbody id="userRows"></tbody>
-      </table>
+      <div class="utable-wrap">
+        <table class="utable">
+          <thead><tr>
+            <th data-i18n="uName">Full name</th><th data-i18n="uUsername">Username</th>
+            <th data-i18n="uRole">Role</th><th data-i18n="uContact">Contact</th><th></th>
+          </tr></thead>
+          <tbody id="userRows"></tbody>
+        </table>
+      </div>
       <div class="panel-title" data-i18n="addUser">Add User</div>
       <form class="uform" id="uform" autocomplete="off" onsubmit="return submitUser(event)">
         <input id="u_full_name" placeholder="Full name">
@@ -438,8 +449,7 @@ html,body{height:100%;font-family:var(--sans);background:var(--bg);color:var(--t
 const API_BASE       = location.origin.startsWith('http')
                          ? location.origin : 'http://localhost:8000';
 const ACTIVE_CAMS    = new Set([4]);  // keep in sync with VIDEO_SOURCES in config.py
-                                      // (was [1, 2, 3] — restore when the video files are re-enabled)
-const CROWD_ALERT_AT = 4;             // keep in sync with CROWD_MIN_PERSONS in config.py —
+const CROWD_ALERT_AT = 2;            // keep in sync with CROWD_MIN_PERSONS in config.py —
                                       // drawn as the threshold line on the occupancy chart
 const STREAM_BASE    = API_BASE + '/video_feed/';
 const STREAM_RETRY_MS = 3000;
@@ -513,6 +523,10 @@ const I18N = {
     crowdLabel:'CROWD GATHERING', fallLabel:'FALL DETECTED',
     crowdShort:'Crowd', fallShort:'Fall',
     clearedCrowd:'Crowd Cleared', clearedFall:'Fall Cleared',
+    tamperLabel:'CAMERA TAMPERING', tamperShort:'Tamper', clearedTamper:'Tamper Cleared',
+    camOfflineLabel:'CAMERA OFFLINE', camOfflineShort:'Offline', clearedOffline:'Camera Back Online',
+    mDetail:'Details', tamperCovered:'Lens covered or blocked',
+    tamperFrozen:'Feed frozen or replayed', camOfflineDetail:'No frames received',
     confirmClear:'Clear all alert history from the database?',
     clearFailed:'Failed to clear database. Is the backend running?',
     viewEvidence:'View evidence snapshot', evidenceAlt:'Evidence snapshot',
@@ -552,6 +566,10 @@ const I18N = {
     crowdLabel:'भीड़ जमा', fallLabel:'गिरना पाया गया',
     crowdShort:'भीड़', fallShort:'गिरना',
     clearedCrowd:'भीड़ समाप्त', clearedFall:'गिरना समाप्त',
+    tamperLabel:'कैमरे से छेड़छाड़', tamperShort:'छेड़छाड़', clearedTamper:'छेड़छाड़ समाप्त',
+    camOfflineLabel:'कैमरा ऑफ़लाइन', camOfflineShort:'ऑफ़लाइन', clearedOffline:'कैमरा फिर ऑनलाइन',
+    mDetail:'विवरण', tamperCovered:'लेंस ढका या अवरुद्ध',
+    tamperFrozen:'फ़ीड रुकी या दोहराई गई', camOfflineDetail:'कोई फ़्रेम प्राप्त नहीं',
     confirmClear:'क्या डेटाबेस से सभी अलर्ट इतिहास हटाएँ?',
     clearFailed:'डेटाबेस साफ़ नहीं हो सका। क्या बैकएंड चल रहा है?',
     viewEvidence:'साक्ष्य चित्र देखें', evidenceAlt:'साक्ष्य चित्र',
@@ -633,7 +651,7 @@ async function refreshUsers(){
     tbody.innerHTML = rows.map(u => `
       <tr>
         <td>${esc(u.full_name || '—')}</td>
-        <td>${esc(u.username)}</td>
+        <td class="uname" title="${esc(u.username)}">${esc(u.username)}</td>
         <td><span class="urole ${u.role}">${t(u.role === 'admin' ? 'roleAdmin' : 'roleGuard')}</span></td>
         <td>${esc(u.telegram_chat_id || u.phone || '—')}</td>
         <td>${u.id === currentUser.id ? ''
@@ -735,11 +753,24 @@ function applyLang(){
 // and they match the CROWD / FALL wording burned into the video HUD.
 // Getters resolve through t() so every existing `T.label` / `T.short` call
 // site picks up the current language with no change.
+// labelKey / clearedKey: i18n keys, so the log and modal can tag elements for
+// re-translation without a per-type branch. cooldownMs overrides
+// MODAL_COOLDOWN_MS for the automatic popup.
 const TYPES = {
   gathering: { get label(){ return t('crowdLabel'); },
-               get short(){ return t('crowdShort'); }, color:'#e3b341' },
+               get short(){ return t('crowdShort'); }, color:'#e3b341',
+               labelKey:'crowdLabel', clearedKey:'clearedCrowd' },
   fall:      { get label(){ return t('fallLabel');  },
-               get short(){ return t('fallShort');  }, color:'#f85149' }
+               get short(){ return t('fallShort');  }, color:'#f85149',
+               labelKey:'fallLabel', clearedKey:'clearedFall' },
+  // Camera health — pushed over the WebSocket only, never stored as DB rows.
+  // Tamper is a short-lived, deliberate act, so its popup re-arms sooner.
+  tamper:    { get label(){ return t('tamperLabel'); },
+               get short(){ return t('tamperShort'); }, color:'#bc8cff',
+               labelKey:'tamperLabel', clearedKey:'clearedTamper', cooldownMs:10000 },
+  offline:   { get label(){ return t('camOfflineLabel'); },
+               get short(){ return t('camOfflineShort'); }, color:'#8b949e',
+               labelKey:'camOfflineLabel', clearedKey:'clearedOffline' }
 };
 
 // Location names translate; the CAM-NN identifier never does.
@@ -752,7 +783,9 @@ const CAMS = {
 
 // Alert severity — higher wins when a camera has more than one active alert
 // (a fall outranks a gathering for the border colour, badge and status text).
-const SEVERITY = { fall: 2, gathering: 1 };
+// A camera that is offline or tampered cannot see falls or crowds at all, so
+// those outrank the detections.
+const SEVERITY = { offline: 4, tamper: 3, fall: 2, gathering: 1 };
 
 // ── STATE ────────────────────────────────────────────────────────
 let isDark = true;
@@ -812,7 +845,8 @@ function applyCamVisualState(cam){
     if(camEl) camEl.className = 'cam a-' + type;
     if(bdg){ bdg.className = 'cam-badge ' + type; bdg.textContent = T.short.toUpperCase(); bdg.style.display = 'block'; }
     if(clr) clr.style.display = 'block';
-    const stColors = {gathering:'var(--amber)', fall:'var(--red)'};
+    const stColors = {gathering:'var(--amber)', fall:'var(--red)',
+                      tamper:TYPES.tamper.color, offline:TYPES.offline.color};
     if(stEl) stEl.innerHTML = `<span class="st-dot" style="background:${stColors[type]}"></span><span style="color:${stColors[type]}">${T.short}</span>`;
   } else {
     if(camEl) camEl.className = 'cam';
@@ -974,7 +1008,7 @@ function clearAlert(cam, type){
 
 // ── EVENT LOG ────────────────────────────────────────────────────
 // Two-letter type badges — no icon fonts or emoji
-const ICONS={gathering:'CG',fall:'FD',ok:'OK'};
+const ICONS={gathering:'CG',fall:'FD',tamper:'TP',offline:'CO',ok:'OK'};
 
 function addToLog(cam, type, T, C, alertTime, row){
   const list=document.getElementById('evt-list'); if(!list) return;
@@ -983,7 +1017,9 @@ function addToLog(cam, type, T, C, alertTime, row){
     ? (row.acknowledged_at.split(' ')[1] || row.acknowledged_at) : null;
   const ackLine = ackAt
     ? `<div class="evt-sub" style="color:var(--green)" data-i18n-ack="${ackAt}">${t('ackShort')}: ${ackAt}</div>` : '';
-  const labelKey = type === 'fall' ? 'fallLabel' : 'crowdLabel';
+  const labelKey = T.labelKey;
+  const detailLine = row && row.detailKey
+    ? `<div class="evt-sub" data-i18n="${row.detailKey}">${t(row.detailKey)}</div>` : '';
   const evt=document.createElement('div');
   evt.className='evt new';
   evt.innerHTML=`
@@ -991,6 +1027,7 @@ function addToLog(cam, type, T, C, alertTime, row){
     <div class="evt-body">
       <div class="evt-title" style="color:${T.color}" data-i18n="${labelKey}">${T.label}</div>
       <div class="evt-sub" data-i18n-cam="${cam}">${C.name} · ${C.loc}</div>
+      ${detailLine}
       ${ackLine}
       <div class="evt-time">${timeStr}</div>
     </div>`;
@@ -1011,7 +1048,7 @@ function addToLog(cam, type, T, C, alertTime, row){
 function addClearedToLog(cam, type){
   const list=document.getElementById('evt-list'); if(!list) return;
   const C=CAMS[cam], T=TYPES[type]; if(!C||!T) return;
-  const key = type === 'fall' ? 'clearedFall' : 'clearedCrowd';
+  const key = T.clearedKey;
   const evt=document.createElement('div');
   evt.className='evt new';
   evt.innerHTML=`
@@ -1057,7 +1094,8 @@ function trimLog(list){
 function presentModal(cam, type, T, C, timestamp, row, fromLog){
   if(fromLog){ showModal(cam, type, T, C, timestamp, row); return; }
   const key = cam + ':' + type, now = Date.now();
-  if(lastModalAt[key] && (now - lastModalAt[key]) < MODAL_COOLDOWN_MS) return;
+  const cooldown = T.cooldownMs || MODAL_COOLDOWN_MS;
+  if(lastModalAt[key] && (now - lastModalAt[key]) < cooldown) return;
   lastModalAt[key] = now;
   if(document.getElementById('backdrop').classList.contains('open')){
     modalQueue.push([cam, type, T, C, timestamp, row]);
@@ -1072,7 +1110,7 @@ function showModal(cam, type, T, C, timestamp, row){
 
   // retag the title so a language switch re-translates it in place
   const mTitle = document.getElementById('m-title');
-  mTitle.setAttribute('data-i18n', type === 'fall' ? 'fallLabel' : 'crowdLabel');
+  mTitle.setAttribute('data-i18n', T.labelKey);
   mTitle.textContent = T.label;
 
   const evidence = row && row.frame_path
@@ -1081,12 +1119,15 @@ function showModal(cam, type, T, C, timestamp, row){
          onerror="this.style.display='none'">` : '';
   const ackRow = row && row.acknowledged_at
     ? `<div class="modal-row"><span class="mkey" data-i18n="mAcknowledged">${t('mAcknowledged')}</span><span class="mval2" style="color:var(--green)">${row.acknowledged_at}</span></div>` : '';
-  const labelKey = type === 'fall' ? 'fallLabel' : 'crowdLabel';
+  const labelKey = T.labelKey;
+  const detailRow = row && row.detailKey
+    ? `<div class="modal-row"><span class="mkey" data-i18n="mDetail">${t('mDetail')}</span><span class="mval2" data-i18n="${row.detailKey}">${t(row.detailKey)}</span></div>` : '';
 
   document.getElementById('m-body').innerHTML = `
     ${evidence}
     <div class="modal-row"><span class="mkey" data-i18n="mCamera">${t('mCamera')}</span><span class="mval2" data-i18n-cam="${cam}">${C.name} · ${C.loc}</span></div>
     <div class="modal-row"><span class="mkey" data-i18n="mDetection">${t('mDetection')}</span><span class="mval2" style="color:${T.color}" data-i18n="${labelKey}">${T.label}</span></div>
+    ${detailRow}
     <div class="modal-row"><span class="mkey" data-i18n="mTimestamp">${t('mTimestamp')}</span><span class="mval2">${timestamp || ts()}</span></div>
     ${ackRow}`;
 
@@ -1396,6 +1437,51 @@ function handleAlertRow(type, row){
   // and re-opened the popup for every single state transition.)
 }
 
+// ── CAMERA HEALTH / TAMPER EVENTS ─────────────────────────────────
+// State transitions with no DB row, so they skip handleAlertRow's row-ID
+// dedup. They arrive two ways — pushed over the WebSocket the instant they
+// happen, and reconciled from /stats on every poll (syncCameraHealth) so a
+// page opened mid-incident, or one whose socket dropped, still catches up.
+// Both paths go through here, deduplicated on the last server state seen, so
+// an incident alerts once however it arrives, and an acknowledged condition
+// that is still ongoing does not re-alert on the next poll.
+// event type → [alert type, active?]
+const CAMERA_EVENTS = {
+  camera_tamper:  ev => ['tamper',  !!ev.is_alert],
+  camera_offline: () => ['offline', true],
+  camera_online:  () => ['offline', false],
+};
+let cameraHealth = {};   // "<cam>:<type>" → last state seen from the server
+function handleCameraEvent(ev){
+  const cam = ev.cam_id;
+  if(!CAMS[cam]) return;
+  const [type, active] = CAMERA_EVENTS[ev.type](ev);
+  const key = cam + ':' + type, was = cameraHealth[key];
+  if(was === active) return;              // nothing changed (e.g. poll after push)
+  cameraHealth[key] = active;
+  if(active){
+    // covered → frozen while already alerting stays one alert, by design
+    const detailKey = type === 'offline' ? 'camOfflineDetail'
+                    : ev.tamper_type === 'frozen' ? 'tamperFrozen' : 'tamperCovered';
+    triggerAlert(cam, type, { timestamp: ev.timestamp, detailKey });
+  } else if(was){                         // a real end of a condition we raised
+    clearAlert(cam, type);
+    addClearedToLog(cam, type);
+  }
+}
+
+// Reconcile from /stats → camera_status (keys are cam ids as strings).
+function syncCameraHealth(status){
+  if(!status) return;
+  Object.entries(status).forEach(([id, s]) => {
+    const cam = Number(id);
+    handleCameraEvent({ type:'camera_tamper', cam_id:cam,
+                        is_alert: s.tamper ? 1 : 0, tamper_type: s.tamper });
+    handleCameraEvent({ type: s.offline_alert ? 'camera_offline' : 'camera_online',
+                        cam_id: cam });
+  });
+}
+
 // ── WEBSOCKET ALERT PUSH (instant; polling remains as fallback) ───
 let wsConnected = false;
 
@@ -1412,6 +1498,7 @@ function initAlertSocket(){
     try {
       const ev = JSON.parse(msg.data);
       if(ev.type === 'escalation') handleEscalation(ev);
+      else if(CAMERA_EVENTS[ev.type]) handleCameraEvent(ev);
       else if(TYPES[ev.type]) handleAlertRow(ev.type, ev);
     } catch(e) {}
   };
@@ -1447,6 +1534,7 @@ async function pollBackend(){
     // row-ID dedup means whichever path arrives first wins, no doubles.
     handleAlertRow('gathering', latest);
     handleAlertRow('fall', latestFall);
+    syncCameraHealth(stats.camera_status);
 
     if(!backendConnected){
       backendConnected = true;

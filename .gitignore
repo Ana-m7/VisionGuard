@@ -1,5 +1,6 @@
 # generated at runtime
 evidence_frames/
+logs/
 crowd_events.db
 crowd_events.db-wal
 crowd_events.db-shm

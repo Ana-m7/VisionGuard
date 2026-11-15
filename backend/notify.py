@@ -17,6 +17,7 @@ a dropped Wi-Fi connection cannot take the system down mid-incident.
 """
 import base64
 import json
+import logging
 import os
 import sys
 import threading
@@ -25,7 +26,6 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from collections import deque
-from datetime import datetime
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -35,9 +35,13 @@ TWILIO_API = "https://api.twilio.com/2010-04-01/Accounts/{sid}/Messages.json"
 TIMEOUT_SECONDS = 10
 
 
+logger = logging.getLogger("visionguard.notify")
+
+
 def _log(prefix, to, message):
-    stamp = datetime.now().strftime("%H:%M:%S")
-    print(f"[{stamp}] NOTIFY {prefix} -> {to}: {message}")
+    # The message is multi-line (as sent to a phone); flattened so each
+    # notification stays one greppable log line.
+    logger.info("NOTIFY %s -> %s: %s", prefix, to, " | ".join(message.splitlines()))
 
 
 class LogNotifier:
@@ -96,15 +100,18 @@ class TelegramNotifier:
             if payload.get("ok"):
                 _log("(telegram sent)", to_chat_id, message)
                 return True
-            print(f"NOTIFY FAILED for {to_chat_id}: {payload.get('description')}")
+            logger.warning("NOTIFY FAILED for %s: %s", to_chat_id, payload.get("description"))
         except urllib.error.HTTPError as e:
             detail = e.read().decode()[:200]
-            print(f"NOTIFY FAILED ({e.code}) for {to_chat_id}: {detail}")
+            logger.warning("NOTIFY FAILED (%d) for %s: %s", e.code, to_chat_id, detail)
             if "chat not found" in detail:
-                print("  -> that chat ID has never messaged the bot. Open the bot "
-                      "in Telegram and press Start, then re-read the chat ID.")
+                logger.warning(
+                    "  -> chat ID %s has never messaged the bot. "
+                    "Open the bot in Telegram and press Start, then re-read the chat ID.",
+                    to_chat_id,
+                )
         except Exception as e:
-            print(f"NOTIFY FAILED for {to_chat_id}: {e}")
+            logger.error("NOTIFY FAILED for %s: %s", to_chat_id, e)
         self._fallback.send(to_chat_id, message)
         return False
 
@@ -154,12 +161,14 @@ class TwilioWhatsAppNotifier:
             return True
         except urllib.error.HTTPError as e:
             detail = e.read().decode()[:200]
-            print(f"NOTIFY FAILED ({e.code}) for {to_phone}: {detail}")
+            logger.warning("NOTIFY FAILED (%d) for %s: %s", e.code, to_phone, detail)
             if b"63015" in detail.encode():
-                print("  -> that number has not joined the WhatsApp sandbox; "
-                      "send 'join <code>' to the sandbox number first.")
+                logger.warning(
+                    "  -> %s has not joined the WhatsApp sandbox; "
+                    "send 'join <code>' to the sandbox number first.", to_phone,
+                )
         except Exception as e:
-            print(f"NOTIFY FAILED for {to_phone}: {e}")
+            logger.error("NOTIFY FAILED for %s: %s", to_phone, e)
         # Delivery failed — still record the message so the incident trail
         # and the demo both survive a network problem.
         self._fallback.send(to_phone, message)
@@ -203,7 +212,7 @@ class RateLimited:
 
     def send(self, to_phone, message):
         if not self._take_slot():
-            print(f"NOTIFY THROTTLED ({self._max}/hour reached) — logging instead")
+            logger.warning("NOTIFY THROTTLED (%d/hour reached) — logging instead", self._max)
             return self._fallback.send(to_phone, message)
         return self._inner.send(to_phone, message)
 
@@ -220,18 +229,21 @@ def build_notifier():
     telegram, twilio = TelegramNotifier(), TwilioWhatsAppNotifier()
 
     if want in ("telegram", "auto") and telegram.configured:
-        print(f"Notifications: Telegram "
-              f"(capped at {config.NOTIFY_MAX_PER_HOUR}/hour)")
+        logger.info("Notifications: Telegram (capped at %d/hour)", config.NOTIFY_MAX_PER_HOUR)
         return RateLimited(telegram, config.NOTIFY_MAX_PER_HOUR)
     if want in ("whatsapp", "auto") and twilio.configured:
-        print(f"Notifications: Twilio WhatsApp, from {twilio.sender} "
-              f"(capped at {config.NOTIFY_MAX_PER_HOUR}/hour)")
+        logger.info(
+            "Notifications: Twilio WhatsApp, from %s (capped at %d/hour)",
+            twilio.sender, config.NOTIFY_MAX_PER_HOUR,
+        )
         return RateLimited(twilio, config.NOTIFY_MAX_PER_HOUR)
     if want == "log":
-        print("Notifications: log only (pinned by NOTIFY_TRANSPORT)")
+        logger.info("Notifications: log only (pinned by NOTIFY_TRANSPORT)")
     else:
-        print("Notifications: log only (set TELEGRAM_BOT_TOKEN in the "
-              "environment to send real Telegram messages)")
+        logger.info(
+            "Notifications: log only "
+            "(set TELEGRAM_BOT_TOKEN in the environment to send real messages)"
+        )
     return LogNotifier()
 
 

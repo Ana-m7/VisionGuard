@@ -17,6 +17,7 @@ Acknowledging an alert at any point stops its climb — the queries require
 `acknowledged_at IS NULL`.
 """
 import asyncio
+import logging
 import os
 import sqlite3
 import sys
@@ -28,6 +29,9 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import config
 from backend import auth
 from backend.notify import notifier
+from log_setup import log_alert
+
+logger = logging.getLogger("visionguard.escalation")
 
 # alert type → (table, alert flag column, human label, only_while_active)
 #
@@ -182,12 +186,24 @@ def _escalate_once(push_event):
                         for person in people:
                             if notifier.send(person[notifier.destination_key], text):
                                 sent.append(person["full_name"] or person["username"])
-                        if not people:
-                            who = 'guard' if level == LEVEL_GUARD else 'administrator'
-                            print(f"  no {who} has a {notifier.destination_key} on file "
-                                  f"— nothing to notify")
                     else:
                         grouped = True
+                    rung = "security guard" if level == LEVEL_GUARD else "administrator"
+                    if sent:
+                        outcome = "notified " + ", ".join(sent)
+                    elif grouped:
+                        outcome = (f"grouped with an earlier escalation for this "
+                                   f"camera in the last {config.NOTIFY_GROUP_SECONDS}s, "
+                                   f"no new message sent")
+                    elif not people:
+                        outcome = (f"nobody notified, no {rung} has a "
+                                   f"{notifier.destination_key} on file")
+                    else:
+                        outcome = "delivery failed, see NOTIFY lines"
+                    log_alert(logger, logging.WARNING, "ESCALATED", alert_type,
+                              row["cam_id"],
+                              f"unacknowledged {seconds}s, sent to {rung}: {outcome}",
+                              row["id"])
                     push_event({
                         "type": "escalation",
                         "alert_type": alert_type,
@@ -208,23 +224,23 @@ def _escalate_once(push_event):
 async def escalation_loop(push_event):
     """Background sweep. Sleeps between passes so it costs nothing when the
     system is quiet, and never lets an exception kill the loop."""
-    print(f"Escalation ladder active: guard at {config.ESCALATE_GUARD_SECONDS}s, "
-          f"administrator at {config.ESCALATE_ADMIN_SECONDS}s "
-          f"(sweeping every {config.ESCALATION_SCAN_SECONDS}s)", flush=True)
+    logger.info(
+        "Escalation ladder active: guard at %ds, administrator at %ds "
+        "(sweeping every %ds)",
+        config.ESCALATE_GUARD_SECONDS, config.ESCALATE_ADMIN_SECONDS,
+        config.ESCALATION_SCAN_SECONDS,
+    )
     sweeps = 0
     while True:
         try:
             n = await asyncio.to_thread(_escalate_once, push_event)
             sweeps += 1
-            # A quiet heartbeat every ~2 min proves the loop is alive even
-            # when nothing is escalating.
-            if n or sweeps % max(1, int(120 / config.ESCALATION_SCAN_SECONDS)) == 0:
-                print(f"[escalation] sweep #{sweeps}: {n} alert(s) escalated",
-                      flush=True)
+            # Each escalation logs its own ESCALATED line; this quiet
+            # heartbeat every ~2 min proves the loop is alive when idle.
+            if not n and sweeps % max(1, int(120 / config.ESCALATION_SCAN_SECONDS)) == 0:
+                logger.info("Escalation sweep #%d: nothing pending", sweeps)
         except asyncio.CancelledError:
             raise
         except Exception as e:
-            import traceback
-            print(f"[escalation] sweep FAILED: {e}", flush=True)
-            traceback.print_exc()
+            logger.error("Escalation sweep failed: %s", e, exc_info=True)
         await asyncio.sleep(config.ESCALATION_SCAN_SECONDS)

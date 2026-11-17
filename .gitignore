@@ -16,3 +16,4 @@ venv/
 # and video3.mp4 show identifiable people and places, so neither is shipped.
 videos/video3.mp4
 videos/video4.mp4
+model_testing_suite/external_datasets/ 

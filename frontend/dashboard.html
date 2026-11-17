@@ -448,7 +448,7 @@ html,body{height:100%;font-family:var(--sans);background:var(--bg);color:var(--t
 // fixed address when the file is opened directly (file://).
 const API_BASE       = location.origin.startsWith('http')
                          ? location.origin : 'http://localhost:8000';
-const ACTIVE_CAMS    = new Set([4]);  // keep in sync with VIDEO_SOURCES in config.py
+const ACTIVE_CAMS    = new Set([2, 4]);  // keep in sync with VIDEO_SOURCES in config.py
 const CROWD_ALERT_AT = 2;            // keep in sync with CROWD_MIN_PERSONS in config.py —
                                       // drawn as the threshold line on the occupancy chart
 const STREAM_BASE    = API_BASE + '/video_feed/';

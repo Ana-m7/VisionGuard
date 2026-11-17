@@ -383,8 +383,15 @@ def classify_persons(result):
                     angle = math.degrees(math.atan2(abs(dx), abs(dy)))
                 if mid_ankle:
                     torso_len = math.hypot(dx, dy)
-                    legs_upright = (mid_ankle[1] - mid_hip[1]
-                                    > config.FALL_LEG_VETO_RATIO * torso_len)
+                    # A steep overhead camera foreshortens the torso of
+                    # someone lying down — shoulder and hip project close
+                    # together — while the legs still span a real distance
+                    # in the image. Once torso_len collapses that far, it is
+                    # no longer a trustworthy scale for the ankle check, so
+                    # the veto is skipped and angle/head-level decide alone.
+                    if torso_len > config.FALL_TORSO_FORESHORTEN_RATIO * h:
+                        legs_upright = (mid_ankle[1] - mid_hip[1]
+                                        > config.FALL_LEG_VETO_RATIO * torso_len)
             if mid_hip and kconf[KP_NOSE] >= config.KEYPOINT_CONF_MIN:
                 # head fails to rise meaningfully above the hips
                 head_down = (mid_hip[1] - kxy[KP_NOSE][1]) < 0.15 * h
@@ -642,7 +649,13 @@ def capture_thread(cam_id, source, frame_store, latest, overlay):
 # state machine. Runs as fast as it can without ever stalling the video.
 # ================================================================
 def inference_thread(cam_id, latest, overlay, live_stats):
-    model = YOLO(config.POSE_MODEL_PATH)  # own instance: thread safety
+    # Two models, own instances per thread (ultralytics inference is not
+    # thread-safe across threads). Both run sequentially in this same
+    # thread — no extra thread is added — so the cost is purely the
+    # doubled inference time per cycle, not doubled thread/scheduling
+    # overhead. See config.py for why two models instead of one.
+    det_model = YOLO(config.DETECTION_MODEL_PATH)   # crowd counting (boxes)
+    pose_model = YOLO(config.POSE_MODEL_PATH)       # fall detection (keypoints)
     conn = sqlite3.connect(config.DB_PATH, timeout=30)  # wait out brief write locks
     cur = conn.cursor()
 
@@ -674,12 +687,17 @@ def inference_thread(cam_id, latest, overlay, live_stats):
 
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         # track() keeps per-person IDs stable across frames (ByteTrack),
-        # which lets fall confirmation follow individuals, not frames
+        # which lets fall confirmation follow individuals, not frames.
+        # Two sequential calls — plain detection for crowd counting (finds
+        # more of an occluded crowd), pose for fall detection (needs
+        # keypoints, which a plain detection model does not produce).
         t_infer = time.perf_counter()
-        result = model.track(frame, classes=[0], persist=True,
-                             conf=config.DETECTION_CONF_MIN, verbose=False)[0]
+        det_result = det_model.track(frame, classes=[0], persist=True,
+                                     conf=config.DETECTION_CONF_MIN, verbose=False)[0]
+        pose_result = pose_model.track(frame, classes=[0], persist=True,
+                                       conf=config.DETECTION_CONF_MIN, verbose=False)[0]
         latency_ms = (time.perf_counter() - t_infer) * 1000
-        boxes = result.boxes
+        boxes = det_result.boxes
         person_count = len(boxes)
 
         counts, max_density = zone_densities(boxes, frame.shape)
@@ -693,14 +711,18 @@ def inference_thread(cam_id, latest, overlay, live_stats):
         else:
             crowd_alert = person_count >= config.CROWD_MIN_PERSONS
 
-        persons = classify_persons(result)
+        persons = classify_persons(pose_result)
         confirmed = confirm_falls(persons, fall_streaks)
         fall_alert = len(confirmed) > 0
         fall_angle = next((p["angle"] for p in confirmed if p["angle"] is not None), None)
         fall_ratio = max((p["ratio"] for p in confirmed), default=0.0)
 
-        # Publish for the capture thread to draw on every subsequent frame
-        overlay.set(result=result, counts=counts, confirmed=confirmed,
+        # Publish for the capture thread to draw on every subsequent frame.
+        # `result` drives the box/ID overlay (annotate()) — det_result is
+        # used since its boxes are what crowd counting (and the dashboard's
+        # person count) is actually based on; draw_fall_overlays draws the
+        # confirmed falls (from pose_result) as a separate red box on top.
+        overlay.set(result=det_result, counts=counts, confirmed=confirmed,
                     person_count=person_count, max_density=max_density,
                     crowd_alert=crowd_alert, fall_alert=fall_alert,
                     seq=seq)

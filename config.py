@@ -21,6 +21,9 @@ VIDEO_SOURCES = {
     # sampled frames reached the crowd threshold. Drop a file into videos/
     # and add it here (plus ACTIVE_CAMS in frontend/dashboard.html) to
     # bring another camera online.
+
+    # Test clip downloaded from YouTube (https://youtu.be/8DJi4PrdFCg).
+    2: os.path.join(ROOT, "videos", "video3.mp4"),
 }
 
 CAMERA_LABELS = {
@@ -33,16 +36,52 @@ CAMERA_LABELS = {
 # Local webcam as CAM-04, alongside the file-backed cameras. If no webcam is
 # present the camera thread exits cleanly and the dashboard shows its
 # placeholder — the rest of the system is unaffected.
-ENABLE_WEBCAM = True
+ENABLE_WEBCAM = False
 if ENABLE_WEBCAM:
     VIDEO_SOURCES[4] = 0  # cv2 device index
+else:
+    # Temporary test clip in place of the webcam — swap back by flipping
+    # ENABLE_WEBCAM to True above.
+    VIDEO_SOURCES[4] = os.path.join(ROOT, "videos", "fall.mp4")
 
 # ── Detection ────────────────────────────────────────────────────
-# Single yolov8n-pose model serves both detectors: its person boxes feed
-# crowd counting and its geometry feeds fall detection. Benchmarked against
-# running yolov8n + yolov8n-pose together: person counts agree within ±1 on
-# 92-100% of frames while inference cost is cut roughly in half.
-POSE_MODEL_PATH = os.path.join(ROOT, "models", "yolov8n-pose.pt")
+# TWO models per camera, not one — a deliberate deviation from this
+# project's original single-model design (see README "Design decision: one
+# model, not two"). That design assumed the pose model's own person boxes
+# count crowds about as well as a dedicated detection model, which
+# benchmarking on normal-angle footage supported. It breaks down on this
+# demo's steep top-down CCTV footage with occluded people.
+#
+# DETECTION_MODEL_PATH → crowd counting (zone_densities, person_count)
+# POSE_MODEL_PATH      → fall detection (classify_persons, keypoints) —
+#                         needs a pose model, since plain detection has no
+#                         keypoints at all.
+#
+# A fixed per-camera crop+zoom preprocessing step (run the single pose
+# model on just a cropped/upscaled region) was also tried and measured
+# even better accuracy at no speed cost — but it only sees inside the
+# cropped rectangle. Anyone outside it (e.g. a person near the frame edge)
+# is completely invisible to the detector, which is not an acceptable
+# blind spot for a fall-detection system. Reverted in favour of this
+# two-model, full-frame approach: slower, but nobody in the frame goes
+# unseen.
+#
+# Crowd model is nano, not small: on a sample frame with 6 real people,
+# yolov8s (small) reported 8 boxes, but two pairs of those boxes heavily
+# overlap the same real person (confirmed visually) — it was
+# double-counting, not finding 2 more real people, and it was live-observed
+# over-counting a 5-person scene as 8. yolov8n (nano) found exactly 6 with
+# no overlapping duplicates, so it is both faster AND more correct here —
+# the harder pose/keypoint task is where the bigger model's extra capacity
+# actually helps (yolov8s-pose: 5/6 found vs yolov8n-pose: 2/6).
+#
+# Measured on an i5-1135G7 (CPU only, no CUDA): ~250ms (nano detect) +
+# ~270ms (small pose) per frame run sequentially, so about 2.8 detection
+# cycles/sec per camera. Capture and inference are decoupled threads, so
+# the live video stays perfectly smooth regardless — only the
+# detection/alert refresh rate is affected.
+DETECTION_MODEL_PATH = os.path.join(ROOT, "models", "yolov8n.pt")
+POSE_MODEL_PATH = os.path.join(ROOT, "models", "yolov8s-pose.pt")
 
 CROWD_MIN_PERSONS = 2    # total persons in frame to trigger a crowd alert
 CROWD_CLEAR_MARGIN = 1   # hysteresis: once alerting, the count must fall to
@@ -60,8 +99,13 @@ GRID_COLS = 4
 # slower machine, lower it (0 = flat out) for fresher boxes.
 DETECT_INTERVAL = 0.12
 
-DETECTION_CONF_MIN = 0.45   # min box confidence to count as a person at all —
-                            # filters phantom detections on live cameras
+DETECTION_CONF_MIN = 0.25   # min box confidence to count as a person at all —
+                            # filters phantom detections on live cameras.
+                            # Lowered from 0.45 for the top-down CCTV demo
+                            # footage, where partially occluded people in a
+                            # crowd score lower confidence than the
+                            # upright, unoccluded COCO training images this
+                            # model was trained on.
 
 # Fall detection requires skeletal evidence — a person with no usable
 # shoulder/hip keypoints (e.g. upper body only, seated at a desk) is
@@ -76,6 +120,20 @@ FALL_TORSO_ANGLE_DEG = 65   # torso this far off vertical counts as fallen
 KEYPOINT_CONF_MIN = 0.3     # min keypoint confidence to trust a joint
 FALL_LEG_VETO_RATIO = 0.5   # ankles lower than hips by > this × torso
                             # length means upright legs → never a fall
+FALL_TORSO_FORESHORTEN_RATIO = 0.25  # torso shorter than this × box height
+                            # means the shoulder/hip span has collapsed in
+                            # the projection (lying down under a steep
+                            # overhead camera foreshortens the torso this
+                            # way — measured ~0.20 for a real fall in
+                            # top-down test footage vs. ~0.29-0.34 for
+                            # standing/bending). The leg-veto ratio assumes
+                            # torso_len is a sane reference scale; once it
+                            # collapses that assumption breaks; a person
+                            # lying flat can have their ankle project well
+                            # below their hip purely from camera geometry,
+                            # not from standing. Below this ratio the veto
+                            # is skipped and the torso-angle/head-level
+                            # signals decide alone.
 FALL_CONFIRM_FRAMES = 2     # consecutive detection cycles (same person)
                             # before a fall alert fires.
                             # Was 4 when inference ran on every 3rd frame.

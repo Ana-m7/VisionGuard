@@ -448,8 +448,8 @@ html,body{height:100%;font-family:var(--sans);background:var(--bg);color:var(--t
 // fixed address when the file is opened directly (file://).
 const API_BASE       = location.origin.startsWith('http')
                          ? location.origin : 'http://localhost:8000';
-const ACTIVE_CAMS    = new Set([2, 4]);  // keep in sync with VIDEO_SOURCES in config.py
-const CROWD_ALERT_AT = 2;            // keep in sync with CROWD_MIN_PERSONS in config.py —
+const ACTIVE_CAMS    = new Set([1]);  // keep in sync with VIDEO_SOURCES in config.py
+const CROWD_ALERT_AT = 4;          // keep in sync with CROWD_MIN_PERSONS in config.py —
                                       // drawn as the threshold line on the occupancy chart
 const STREAM_BASE    = API_BASE + '/video_feed/';
 const STREAM_RETRY_MS = 3000;
@@ -532,7 +532,7 @@ const I18N = {
     viewEvidence:'View evidence snapshot', evidenceAlt:'Evidence snapshot',
     zone:'Zone', personsSeen:'Persons seen', msFrame:'ms/frame',
     theme:'Dark', themeAlt:'Light',
-    cam1:'Main Entrance', cam2:'Corridor B', cam3:'Front Porch', cam4:'Webcam',
+    cam1:'Courtyard', cam2:'Corridor B', cam3:'Front Porch', cam4:'Webcam',
     logout:'Sign Out', users:'Users', manageUsers:'User Management',
     addUser:'Add User', uName:'Full name', uUsername:'Username',
     uPassword:'Password', uPhone:'Phone', uRole:'Role',
@@ -575,7 +575,7 @@ const I18N = {
     viewEvidence:'साक्ष्य चित्र देखें', evidenceAlt:'साक्ष्य चित्र',
     zone:'ज़ोन', personsSeen:'देखे गए व्यक्ति', msFrame:'मि.से/फ़्रेम',
     theme:'डार्क', themeAlt:'लाइट',
-    cam1:'मुख्य द्वार', cam2:'गलियारा B', cam3:'बरामदा', cam4:'वेबकैम',
+    cam1:'आंगन', cam2:'गलियारा B', cam3:'बरामदा', cam4:'वेबकैम',
     logout:'साइन आउट', users:'उपयोगकर्ता', manageUsers:'उपयोगकर्ता प्रबंधन',
     addUser:'उपयोगकर्ता जोड़ें', uName:'पूरा नाम', uUsername:'उपयोगकर्ता नाम',
     uPassword:'पासवर्ड', uPhone:'फ़ोन', uRole:'भूमिका',

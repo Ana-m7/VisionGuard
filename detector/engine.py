@@ -287,6 +287,45 @@ def init_db():
 # ================================================================
 # CROWD LOGIC
 # ================================================================
+def nested_duplicates(xyxy, conf):
+    """Indices of boxes that are duplicates of a more confident box.
+
+    YOLO sometimes reports part of a person (typically the head) as a second,
+    lower-confidence "person" lying inside the first person's box. Standard
+    NMS keeps it, because a small box inside a large one has a low IoU, so
+    the person is counted twice. A box is treated as a duplicate when at
+    least NESTED_BOX_CONTAINMENT of its area lies inside a more confident
+    box. Two real people overlapping in a crowd each extend outside the
+    other's box, so they are kept.
+    """
+    drop = set()
+    for i, (ax1, ay1, ax2, ay2) in enumerate(xyxy):
+        area = max(0.0, ax2 - ax1) * max(0.0, ay2 - ay1)
+        if area <= 0:
+            continue
+        for j, (bx1, by1, bx2, by2) in enumerate(xyxy):
+            if i == j or conf[j] <= conf[i]:
+                continue
+            iw = min(ax2, bx2) - max(ax1, bx1)
+            ih = min(ay2, by2) - max(ay1, by1)
+            if iw > 0 and ih > 0 and iw * ih / area >= config.NESTED_BOX_CONTAINMENT:
+                drop.add(i)
+                break
+    return drop
+
+
+def drop_nested_boxes(result):
+    """The result with nested duplicate person boxes removed (see
+    nested_duplicates). Returns the result unchanged when there are none."""
+    boxes = result.boxes
+    if boxes is None or len(boxes) < 2:
+        return result
+    drop = nested_duplicates(boxes.xyxy.tolist(), boxes.conf.tolist())
+    if not drop:
+        return result
+    return result[[i for i in range(len(boxes)) if i not in drop]]
+
+
 def zone_densities(boxes, frame_shape):
     h, w = frame_shape[:2]
     cell_h = h // config.GRID_ROWS
@@ -662,6 +701,8 @@ def inference_thread(cam_id, latest, overlay, live_stats):
     crowd_state = None   # None = neutral until first detection
     fall_state = False
     fall_streaks = {}    # tracker ID → consecutive fallen detections
+    last_fall_seen = 0.0  # when a confirmed fall was last in view
+    crowd_streak = 0     # consecutive cycles at or above CROWD_MIN_PERSONS
     last_sample = 0.0    # last occupancy-sample write time
     last_seq = -1
     last_generation = 0
@@ -692,11 +733,18 @@ def inference_thread(cam_id, latest, overlay, live_stats):
         # more of an occluded crowd), pose for fall detection (needs
         # keypoints, which a plain detection model does not produce).
         t_infer = time.perf_counter()
-        det_result = det_model.track(frame, classes=[0], persist=True,
-                                     conf=config.DETECTION_CONF_MIN, verbose=False)[0]
+        # Crowd counting uses plain detection, not track(): at ~3 inference
+        # cycles/sec, people walking across the frame move too far between
+        # cycles for ByteTrack to confirm them, and unconfirmed people are
+        # left out of its output. Measured on fall.mp4: tracking reported
+        # 4-5 people where 6-9 were in view. One-cycle spikes from plain
+        # detection are absorbed by CROWD_CONFIRM_CYCLES below.
+        det_result = det_model.predict(frame, classes=[0],
+                                       conf=config.DETECTION_CONF_MIN, verbose=False)[0]
         pose_result = pose_model.track(frame, classes=[0], persist=True,
                                        conf=config.DETECTION_CONF_MIN, verbose=False)[0]
         latency_ms = (time.perf_counter() - t_infer) * 1000
+        det_result = drop_nested_boxes(det_result)   # one person, one box
         boxes = det_result.boxes
         person_count = len(boxes)
 
@@ -705,15 +753,25 @@ def inference_thread(cam_id, latest, overlay, live_stats):
         # count has to fall CROWD_CLEAR_MARGIN below that to clear it. A scene
         # sitting on the threshold would otherwise flap in and out of alert
         # every few seconds and log each flap as a fresh incident.
+        # Raising also needs CROWD_CONFIRM_CYCLES consecutive cycles at or
+        # above the threshold, so a single miscounted frame cannot raise one.
+        crowd_streak = crowd_streak + 1 if person_count >= config.CROWD_MIN_PERSONS else 0
         if crowd_state:
             crowd_alert = person_count >= (config.CROWD_MIN_PERSONS
                                            - config.CROWD_CLEAR_MARGIN)
         else:
-            crowd_alert = person_count >= config.CROWD_MIN_PERSONS
+            crowd_alert = crowd_streak >= config.CROWD_CONFIRM_CYCLES
 
         persons = classify_persons(pose_result)
         confirmed = confirm_falls(persons, fall_streaks)
-        fall_alert = len(confirmed) > 0
+        # Clearing hysteresis: a fallen person briefly missed by the pose
+        # model (one bad cycle) must not end the alert and raise a new one a
+        # moment later. The alert holds until nobody has been seen down for
+        # FALL_CLEAR_SECONDS.
+        if confirmed:
+            last_fall_seen = time.time()
+        fall_alert = bool(confirmed) or (
+            fall_state and time.time() - last_fall_seen < config.FALL_CLEAR_SECONDS)
         fall_angle = next((p["angle"] for p in confirmed if p["angle"] is not None), None)
         fall_ratio = max((p["ratio"] for p in confirmed), default=0.0)
 

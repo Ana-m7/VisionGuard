@@ -7,6 +7,27 @@ import os
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 
+
+def _load_dotenv(path):
+    """Read KEY=VALUE lines from a local .env file into the environment, so
+    secrets such as TELEGRAM_BOT_TOKEN need not be exported before every run.
+    The file is gitignored. A variable already set in the shell wins."""
+    if not os.path.isfile(path):
+        return
+    with open(path, encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, value = line.split("=", 1)
+            key = key.strip()
+            if key.startswith("export "):
+                key = key[len("export "):].strip()
+            os.environ.setdefault(key, value.strip().strip('"').strip("'"))
+
+
+_load_dotenv(os.path.join(ROOT, ".env"))
+
 # ── Cameras ──────────────────────────────────────────────────────
 # cam_id → video source. An int (e.g. 0) selects a local webcam,
 # a string path selects a video file, an rtsp:// URL selects an IP camera.
@@ -22,12 +43,19 @@ VIDEO_SOURCES = {
     # and add it here (plus ACTIVE_CAMS in frontend/dashboard.html) to
     # bring another camera online.
 
-    # Test clip downloaded from YouTube (https://youtu.be/8DJi4PrdFCg).
-    2: os.path.join(ROOT, "videos", "video3.mp4"),
+    # The only wired camera: overhead courtyard footage with a fall. Video
+    # frames only; OpenCV never decodes the audio track.
+    1: os.path.join(ROOT, "videos", "videofall06.mp4"),
+
+    # Unwired. To reconnect a camera, uncomment its line and add its id to
+    # ACTIVE_CAMS in frontend/dashboard.html.
+    # 2: os.path.join(ROOT, "videos", "video3.mp4"),  # YouTube test clip
+    #                                    (https://youtu.be/8DJi4PrdFCg), not shipped
+    # 4: os.path.join(ROOT, "videos", "fall.mp4"),
 }
 
 CAMERA_LABELS = {
-    1: "Main Entrance",
+    1: "Courtyard",
     2: "Corridor B",
     3: "Front Porch",
     4: "Webcam",
@@ -38,11 +66,7 @@ CAMERA_LABELS = {
 # placeholder — the rest of the system is unaffected.
 ENABLE_WEBCAM = False
 if ENABLE_WEBCAM:
-    VIDEO_SOURCES[4] = 0  # cv2 device index
-else:
-    # Temporary test clip in place of the webcam — swap back by flipping
-    # ENABLE_WEBCAM to True above.
-    VIDEO_SOURCES[4] = os.path.join(ROOT, "videos", "fall.mp4")
+    VIDEO_SOURCES[4] = 0  # cv2 device index (also add 4 to ACTIVE_CAMS)
 
 # ── Detection ────────────────────────────────────────────────────
 # TWO models per camera, not one — a deliberate deviation from this
@@ -83,13 +107,16 @@ else:
 DETECTION_MODEL_PATH = os.path.join(ROOT, "models", "yolov8n.pt")
 POSE_MODEL_PATH = os.path.join(ROOT, "models", "yolov8s-pose.pt")
 
-CROWD_MIN_PERSONS = 2    # total persons in frame to trigger a crowd alert
-CROWD_CLEAR_MARGIN = 1   # hysteresis: once alerting, the count must fall to
+CROWD_MIN_PERSONS = 4    # total persons in frame to trigger a crowd alert
+CROWD_CLEAR_MARGIN = 2   # hysteresis: once alerting, the count must fall to
                           # CROWD_MIN_PERSONS - this before the alert clears.
                           # Without it a scene hovering on the threshold
                           # (3-4-3-4 people) flaps in and out of alert every
                           # few seconds, filling the log and the escalation
                           # ladder with hundreds of duplicate incidents.
+CROWD_CONFIRM_CYCLES = 3  # consecutive detection cycles at or above
+                          # CROWD_MIN_PERSONS before a crowd alert is raised
+                          # (~1s), so a one-frame miscount never raises one
 CROWD_THRESHOLD = 3       # persons in one grid cell to highlight it red
 GRID_ROWS = 3
 GRID_COLS = 4
@@ -106,6 +133,13 @@ DETECTION_CONF_MIN = 0.25   # min box confidence to count as a person at all —
                             # crowd score lower confidence than the
                             # upright, unoccluded COCO training images this
                             # model was trained on.
+
+NESTED_BOX_CONTAINMENT = 0.9  # a person box at least this much inside a more
+                            # confident person box is a duplicate (typically
+                            # the head detected again inside the body box)
+                            # and is dropped. Measured on video3.mp4: one
+                            # visitor was counted as two in about 1 frame
+                            # in 3, turning 2 people into a "crowd" of 3.
 
 # Fall detection requires skeletal evidence — a person with no usable
 # shoulder/hip keypoints (e.g. upper body only, seated at a desk) is
@@ -143,6 +177,11 @@ FALL_CONFIRM_FRAMES = 2     # consecutive detection cycles (same person)
                             # a real fall in the test footage spans only ~5
                             # sampled frames, and 4-in-a-row was no longer
                             # reachable with several cameras running.
+FALL_CLEAR_SECONDS = 2.0    # a fall alert clears only after nobody has been
+                            # seen down for this long. Without it, one cycle
+                            # where the pose model misses the person ended the
+                            # alert and raised a fresh one seconds later — the
+                            # same fall logged as several incidents.
 
 # ── Frames / streaming ───────────────────────────────────────────
 FRAME_SIZE = (480, 270)   # resolution pushed to the dashboard
@@ -168,7 +207,13 @@ TAMPER_UNIFORM_STD = 20             # contrast (grey std dev) below this → cov
 TAMPER_COVERED_CONFIRM_FRAMES = 10  # consecutive dark frames before alert (~400ms)
 TAMPER_FROZEN_PIXEL_DIFF = 15       # per-pixel diff below this = sensor noise
 TAMPER_FROZEN_CHANGE_RATIO = 0.001  # fraction of pixels that must differ
-TAMPER_FROZEN_CONFIRM_FRAMES = 15   # consecutive frozen reads before alert (~600ms)
+TAMPER_FROZEN_CONFIRM_FRAMES = 1440 # consecutive frozen reads before alert
+                                    # (~60s at 24 fps). Was 15 (~0.6s), which
+                                    # flagged any momentarily still scene — a
+                                    # person lying motionless after a fall in
+                                    # an empty courtyard read as a frozen feed
+                                    # and hid the fall alert. A genuinely
+                                    # frozen feed stays frozen.
 
 # ── Logging ──────────────────────────────────────────────────────
 LOG_DIR = os.path.join(ROOT, "logs")

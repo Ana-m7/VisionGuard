@@ -11,7 +11,7 @@ import math
 import config
 from detector.engine import (
     KP_L_HIP, KP_L_SHOULDER, KP_R_HIP, KP_R_SHOULDER,
-    classify_persons, confirm_falls, zone_densities,
+    classify_persons, confirm_falls, nested_duplicates, zone_densities,
 )
 
 N_KEYPOINTS = 17
@@ -241,3 +241,22 @@ def test_leaving_the_frame_clears_the_streak():
     confirm_falls([fallen_person(1)], streaks)
     confirm_falls([fallen_person(2)], streaks)  # person 1 gone
     assert 1 not in streaks and streaks[2] == 1
+
+
+# ── Nested duplicate boxes ──────────────────────────────────────
+def test_head_box_inside_body_box_is_a_duplicate():
+    # body box at 0.9, a head box fully inside it at 0.4 → head dropped
+    assert nested_duplicates(
+        [[100, 100, 200, 400], [130, 110, 170, 160]], [0.9, 0.4]) == {1}
+
+
+def test_overlapping_people_are_both_kept():
+    # two people side by side, overlapping by a third — neither is nested
+    assert nested_duplicates(
+        [[100, 100, 200, 400], [170, 100, 270, 400]], [0.9, 0.5]) == set()
+
+
+def test_more_confident_inner_box_is_kept():
+    # a nested box is only dropped in favour of a MORE confident container
+    assert nested_duplicates(
+        [[100, 100, 200, 400], [130, 110, 170, 160]], [0.4, 0.9]) == set()

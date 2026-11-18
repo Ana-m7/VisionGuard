@@ -121,8 +121,9 @@ VisionGuard/
 ### Crowd detection
 
 * The detection model finds every person in the frame (boxes below `DETECTION_CONF_MIN`, currently **0.25**, are discarded). The floor was lowered from 0.45 because partially occluded people in top-down footage score lower confidence than the upright, unoccluded people the model was trained on.
-* If **`CROWD_MIN_PERSONS` or more** persons are in view, a crowd alert is triggered. Clearing requires the count to fall to `CROWD_MIN_PERSONS - CROWD_CLEAR_MARGIN`. Without that hysteresis a scene hovering on the threshold flaps in and out of alert every few seconds and logs each flap as a fresh incident.
-* The current values (`CROWD_MIN_PERSONS = 2`, `CROWD_CLEAR_MARGIN = 1`) are tuned for the demo footage. A real deployment would set the threshold per site.
+* **Duplicate boxes are removed.** YOLO sometimes reports part of a person (typically the head) as a second, lower-confidence person inside the first person's box. Standard NMS keeps it, because a small box inside a large one has low overlap, so one person was counted as two. A box at least 90 percent inside a more confident box (`NESTED_BOX_CONTAINMENT`) is dropped. Two real people overlapping in a crowd each extend outside the other's box, so both are kept.
+* Counting uses **plain detection, not tracking**. At about three inference cycles per second, people walking across the frame move too far between cycles for the tracker to confirm them, and unconfirmed people are left out of its output: on the street demo clip, tracking reported 4 to 5 people where 6 to 9 were in view.
+* If **4 or more** persons (`CROWD_MIN_PERSONS`) are in view for **3 consecutive detection cycles** (`CROWD_CONFIRM_CYCLES`, about one second), a crowd alert is triggered, so a single miscounted frame never raises one. Clearing requires the count to fall to **2** (`CROWD_CLEAR_MARGIN`): without that hysteresis a scene hovering on the threshold flaps in and out of alert every few seconds and logs each flap as a fresh incident.
 * Independently, the frame is divided into a 3×4 grid. Each person is assigned to the cell containing their box centre, cells with `CROWD_THRESHOLD` (3) or more persons are highlighted red, and the zone counts feed the movement-hotspots panel.
 
 ### Fall detection
@@ -135,18 +136,19 @@ Based on pose keypoints, per person:
 * **Foreshortening exception:** under a steep overhead camera, a person lying flat projects a very short torso (measured about 0.20 of box height for a real fall, against 0.29 to 0.34 for standing or bending). Once the torso is shorter than `FALL_TORSO_FORESHORTEN_RATIO` of the box height it is no longer a trustworthy scale for the leg check, so the veto is skipped and torso angle and head level decide alone.
 * **Skeletal evidence is required.** A person whose shoulders or hips are not visible (for example upper body only, seated at a desk) is never classified as fallen. A wide bounding box alone is not treated as a fall, since partial views routinely produce wide boxes.
 * **Per-person confirmation:** ByteTrack assigns each person a persistent ID, and a fall alert only fires after the *same person* is classified as fallen for `FALL_CONFIRM_FRAMES` (2) consecutive detection cycles, so a single misclassified frame never triggers an alert. The count is deliberately low because inference samples the newest frame rather than every Nth one, and a real fall spans well under a second.
+* **Clearing hysteresis:** a fall alert clears only after nobody has been seen down for `FALL_CLEAR_SECONDS` (2 s). Without it, one cycle in which the pose model missed the person ended the alert and raised a new one seconds later, logging the same fall as several incidents.
 * The triggering torso angle is stored with the event.
 
 ### Person tracking
 
-Both models run through `model.track()` (ByteTrack) rather than plain inference, so every person keeps a stable ID across frames, visible on the feed and used to anchor fall confirmation to individuals.
+The pose model runs through `model.track()` (ByteTrack) rather than plain inference, so every person keeps a stable ID across frames, used to anchor fall confirmation to individuals.
 
 ### Tamper detection
 
 The capture thread checks every raw frame, on a small 320×180 sample so the cost stays well under a millisecond:
 
 * **Covered lens:** mean brightness below `TAMPER_BLACKOUT_THRESHOLD`, or contrast (greyscale standard deviation) below `TAMPER_UNIFORM_STD`, for 10 consecutive frames. The contrast test matters because a webcam's auto-exposure brightens a hand over the lens well above the blackout threshold, but the image stays featureless.
-* **Frozen feed:** fewer than 0.1 percent of pixels change by more than sensor noise between consecutive frames, for 15 consecutive frames. Catches a stalled stream or a replayed still image.
+* **Frozen feed:** fewer than 0.1 percent of pixels change by more than sensor noise between consecutive frames, for 1,440 consecutive frames (about 60 seconds at 24 fps). Catches a stalled stream or a replayed still image. The window is deliberately long: at 15 frames (0.6 s), a person lying motionless after a fall in an otherwise empty scene read as a frozen feed and hid the fall alert.
 
 Covered takes precedence, since a black frame is also a still one. Tamper alerts fire and clear on state change, like the other detectors.
 
@@ -221,7 +223,13 @@ Escalations are delivered over the **Telegram Bot API**, called over plain HTTP 
 
 The transport sits behind a `Notifier` interface, so this is a swap of one class rather than a change to the escalation logic. `TwilioWhatsAppNotifier` is still in the tree and starts working the moment a paid account is configured.
 
-Set the bot token in the environment before starting the server:
+Put the bot token in a `.env` file in the project root (gitignored, read automatically at startup):
+
+```
+TELEGRAM_BOT_TOKEN=123456:ABC-your-bot-token
+```
+
+Or set it in the environment before starting the server:
 
 ```bash
 # Git Bash / macOS / Linux
@@ -339,14 +347,16 @@ Everything lives in **`config.py`**. The main settings:
 
 | Constant | Current value | Description |
 |----------|---------------|-------------|
-| `VIDEO_SOURCES` | CAM-02 file, CAM-04 file | cam_id to source. Int = webcam index, path = video file, `rtsp://` URL = IP camera |
-| `CAMERA_LABELS` | Main Entrance, Corridor B, Front Porch, Webcam | Display names for CAM-01 to CAM-04 |
-| `ENABLE_WEBCAM` | `False` | `True` makes CAM-04 the local webcam; `False` plays `videos/fall.mp4` there instead |
+| `VIDEO_SOURCES` | CAM-01 file | cam_id to source. Int = webcam index, path = video file, `rtsp://` URL = IP camera |
+| `CAMERA_LABELS` | Courtyard, Corridor B, Front Porch, Webcam | Display names for CAM-01 to CAM-04 |
+| `ENABLE_WEBCAM` | `False` | `True` adds the local webcam as CAM-04 |
 | `DETECTION_MODEL_PATH` | `models/yolov8n.pt` | Model used for crowd counting |
 | `POSE_MODEL_PATH` | `models/yolov8s-pose.pt` | Model used for fall detection |
 | `DETECTION_CONF_MIN` | `0.25` | Minimum box confidence to count as a person at all |
-| `CROWD_MIN_PERSONS` | `2` | Persons in frame to trigger a crowd alert (tuned for the demo footage) |
-| `CROWD_CLEAR_MARGIN` | `1` | Hysteresis: the count must fall this far below the trigger before the alert clears |
+| `NESTED_BOX_CONTAINMENT` | `0.9` | A person box this much inside a more confident one is a duplicate and dropped |
+| `CROWD_MIN_PERSONS` | `4` | Persons in frame to trigger a crowd alert |
+| `CROWD_CONFIRM_CYCLES` | `3` | Consecutive detection cycles at or above the threshold before a crowd alert fires |
+| `CROWD_CLEAR_MARGIN` | `2` | Hysteresis: the count must fall this far below the trigger before the alert clears |
 | `CROWD_THRESHOLD` | `3` | Persons per grid cell to highlight the cell red |
 | `GRID_ROWS`, `GRID_COLS` | `3`, `4` | Density grid dimensions |
 | `DETECT_INTERVAL` | `0.12` | Minimum seconds between inference passes per camera. Throttles detection freshness only, never video smoothness |
@@ -355,6 +365,7 @@ Everything lives in **`config.py`**. The main settings:
 | `FALL_LEG_VETO_RATIO` | `0.5` | Ankles this far below hips (times torso length) means upright legs, never a fall |
 | `FALL_TORSO_FORESHORTEN_RATIO` | `0.25` | Torso shorter than this fraction of box height skips the leg veto (steep overhead cameras) |
 | `FALL_CONFIRM_FRAMES` | `2` | Consecutive fallen detections (same person) before an alert fires |
+| `FALL_CLEAR_SECONDS` | `2.0` | A fall alert clears only after nobody has been seen down for this long |
 | `FRAME_SIZE` | `480×270` | Streamed frame resolution |
 | `JPEG_QUALITY` | `75` | Encoding quality for streamed frames |
 | `STREAM_INTERVAL` | `0.05` | Seconds between MJPEG frames sent to the browser |
@@ -381,14 +392,13 @@ Frontend constants (`POLL_INTERVAL_MS`, `ALERT_DEDUP_MS`, `MODAL_COOLDOWN_MS`, `
 
 ### Cameras
 
-The dashboard has four camera tiles. The current configuration uses two of them:
+The dashboard has four camera tiles. The current configuration uses one of them:
 
 | ID | Label | Source | Notes |
 |----|-------|--------|-------|
-| CAM-02 | Corridor B | `videos/video3.mp4` (looped) | Test clip from YouTube (https://youtu.be/8DJi4PrdFCg). **Not shipped in the repository**, because it shows identifiable people. Download it into `videos/`, or point CAM-02 at `videos/video2.mp4`, which is shipped and exercises both detectors. |
-| CAM-04 | Webcam | `videos/fall.mp4` (looped) | Stands in for the webcam while `ENABLE_WEBCAM = False`. Set it to `True` to use the local webcam (`cv2` device 0) instead. |
+| CAM-01 | Courtyard | `videos/videofall06.mp4` (looped) | Overhead courtyard footage containing a fall. Only video frames are read; the audio track is never decoded. |
 
-`videos/video1.mp4` and `videos/video2.mp4` are also shipped and can be assigned to any camera. A camera whose source cannot be opened logs an error and shows as offline on the dashboard; the rest of the system is unaffected.
+Every other camera is unwired. `videos/video1.mp4`, `videos/video2.mp4` and `videos/fall.mp4` are also shipped and can be assigned to any camera; set `ENABLE_WEBCAM = True` to add the local webcam as CAM-04. A camera whose source cannot be opened logs an error and shows as offline on the dashboard; the rest of the system is unaffected.
 
 ### Adding a camera
 
@@ -402,9 +412,9 @@ The dashboard has four camera tiles. The current configuration uses two of them:
 python -m pytest tests/ -v
 ```
 
-36 tests, running in about 15 seconds with no model inference:
+39 tests, running in about 15 seconds with no model inference:
 
-* **Detection logic** (`tests/test_engine.py`) — zone assignment, torso-angle fall classification, the legs-upright veto, head-level falls, occlusion handling, tracker-keyed per-person confirmation streaks
+* **Detection logic** (`tests/test_engine.py`) — duplicate-box removal, zone assignment, torso-angle fall classification, the legs-upright veto, head-level falls, occlusion handling, tracker-keyed per-person confirmation streaks
 * **Health, tamper and API** (`tests/test_health_tamper.py`) — online/offline/stale camera state, covered and frozen tamper detection including the bright-but-featureless case, the camera monitor's offline/online events, structured log lines, and the `/cameras/status`, `/stats` and acknowledgement endpoints
 
 ## Model Evaluation

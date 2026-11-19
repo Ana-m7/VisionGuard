@@ -61,6 +61,17 @@ def _session() -> requests.Session:
     return s
 
 
+def remote_size(url: str, timeout: int = 30) -> int | None:
+    """Content-Length of a URL (HEAD, redirects followed), or None."""
+    try:
+        r = _session().head(url, timeout=timeout, allow_redirects=True)
+        if r.status_code < 400 and r.headers.get("Content-Length"):
+            return int(r.headers["Content-Length"])
+    except Exception:  # noqa: BLE001
+        pass
+    return None
+
+
 def simple_download(url: str, dest_path: str, timeout: int = DEFAULT_TIMEOUT,
                      max_bytes: int | None = None, retries: int = 2,
                      force: bool = False, session: requests.Session | None = None) -> Result:
@@ -273,6 +284,25 @@ class RemoteZipFile(io.RawIOBase):
             raise RuntimeError(f"Server for {url} does not advertise Accept-Ranges: bytes")
         self.length = int(head.headers["Content-Length"])
 
+    #: transient network errors (e.g. "connection reset by peer" on a long
+    #: range-extraction) are retried with backoff instead of aborting a dataset.
+    RETRIES = 6
+
+    def _get_with_retry(self, headers) -> bytes:
+        import time as _time
+        last = None
+        for attempt in range(self.RETRIES):
+            try:
+                r = self.session.get(self.url, headers=headers, timeout=self.timeout)
+                r.raise_for_status()
+                return r.content
+            except (requests.ConnectionError, requests.Timeout,
+                    requests.exceptions.ChunkedEncodingError) as e:
+                last = e
+                _time.sleep(min(60, 2 ** attempt * 2))
+                self.session = _session()
+        raise last
+
     def readable(self):
         return True
 
@@ -324,9 +354,7 @@ class RemoteZipFile(io.RawIOBase):
         if end < self._pos:
             return available
         headers = {"Range": f"bytes={self._pos}-{end}"}
-        r = self.session.get(self.url, headers=headers, timeout=self.timeout)
-        r.raise_for_status()
-        fresh = r.content
+        fresh = self._get_with_retry(headers)
         self._buf_start = self._pos
         self._buf = fresh
         want = fresh[:size]

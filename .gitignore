@@ -16,4 +16,9 @@ venv/
 # and video3.mp4 show identifiable people and places, so neither is shipped.
 videos/video3.mp4
 videos/video4.mp4
-model_testing_suite/external_datasets/ 
+model_testing_suite/external_datasets/
+
+# Privacy: no new footage, and no frames cut from the external datasets.
+# (Videos already in the repo stay tracked; this stops new ones being added.)
+videos/*.mp4
+model_testing_suite/model_eval_results/error_examples/

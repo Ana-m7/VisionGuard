@@ -1,0 +1,8 @@
+# Scratch / local-only outputs of the evaluation suite (the evidence is
+# model_eval_results/ and model_eval_results_archive/, which ARE committed).
+model_eval_results_quick/
+model_eval_results_pinned_quick/
+model_eval_results_smoke/
+model_eval_results_ordercheck/
+.venv-pinned/
+__pycache__/

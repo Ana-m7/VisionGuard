@@ -1,0 +1,22 @@
+# Exact environment the evaluation results in model_eval_results/ were produced with
+# (Python 3.13.5, Windows 11, CPU only). Every run also records these versions in
+# summary.json -> provenance.versions.
+#
+# NOTE: this differs from the project's root requirements.txt, which pins
+# ultralytics==8.4.51, torch==2.8.0, numpy==2.0.2, opencv-python==4.13.0.92.
+# The Python 3.13 install below is the only interpreter on this machine with
+# ultralytics installed, so it is also what the live application runs on.
+# The ultralytics version matters: it decides the
+# default tracker that production's pose_model.track() uses (here: tracktrack.yaml).
+ultralytics==8.4.138
+torch==2.14.0
+torchvision==0.29.0
+opencv-python==5.0.0.93
+numpy==2.4.4
+scipy==1.16.0
+matplotlib==3.10.3
+requests==2.34.2
+lap==0.5.13
+pillow==11.2.1
+PyYAML==6.0.3
+pytest==9.1.1

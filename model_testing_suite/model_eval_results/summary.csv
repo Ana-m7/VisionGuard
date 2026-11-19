@@ -1,10 +1,143 @@
-ambiguous_Likefall_fire_rate,avg_latency_frames,avg_latency_ms,count_mae,count_rmse,crowd_hysteresis_agreement_with_gt_threshold,dataset,detection_f1,detection_precision,detection_recall,devkit_url,elapsed_seconds,f1,fall_event_accuracy,false_positive_rate_on_ADL_clips,false_positive_rate_on_ADL_sequences,fn,fp,latency_caveat,licence_note,mAP50,manual_steps_url,n_ambiguous_clips,n_cases,n_clips_total,n_frames,n_gt_boxes,n_images,n_negative,n_negative_clips,n_positive,n_positive_clips,n_pred_boxes,n_sequences_ok,n_sequences_requested,n_sequences_skipped,name,precision,recall,source_note,status,tn,tp
-,,601.8526575000578,,,,crowdhuman,,,,,54.2,0.6100719424460431,,,,,,,,0.530381204161692,,,,,,374,80,,,,,321,,,,CrowdHuman,0.660436137071651,0.5668449197860963,"Official source https://www.crowdhuman.org/download.html links (annotation_val.odgt, CrowdHuman_val.zip on Google Drive) returned HTTP 404 when checked live -- using the Mendeley YOLO-format mirror of the same dataset instead: https://data.mendeley.com/datasets/tttr2h6pz4/1",OK,,
-,,,28.025,28.091813754188248,1.0,mot20,,,,,31.1,0.3865363735070575,,,,,,,,,,,,,80,,,,,,,,,,,MOT20-01,0.9875173370319001,0.24029699628754642,,OK,,
-,,,18.893333333333334,20.12560558095085,,mall,,,,,25.8,,,,,,,,CUHK research-use-only licence,,,,,,150,,,,,,,,,,,Mall Dataset,,,,OK,,
-,,,,,,pets2009,,,,,0.1,,,,,,,,,,,,,,,,,,,,,,,,,PETS2009,,,,"PARTIAL: ROI + ground-truth count metadata downloaded for 3/3 regions, but this archive contains only pre-extracted features/segmentation masks, NOT raw RGB video frames -- a VisionGuard zone_densities() vs. PETS2009-region comparison requires the original multi-camera video sequences, which are hosted separately and were not reliably retrievable in this session. Reporting dataset metadata only.",,
-0.0,4.0,,,,,le2i,,,,,141.0,0.761904761904762,,0.08333333333333333,,4,1,"frames-from-clip-start-to-confirmation, NOT true fall-onset latency (this re-packaged dataset has no pre-fall baseline frames) -- see UR Fall for true onset-to-confirmation latency",,,,6,,30,,,,,12,,12,,,,,Le2i,0.8888888888888888,0.6666666666666666,,OK,11,8
-,-4.5,,,,,ur_fall,,,,,678.6,0.8,,,0.5,0,1,,CC BY-NC-SA 4.0 (non-commercial academic use),,,,,,,,,2,,2,,,4,4,0,UR Fall Detection Dataset,0.6666666666666666,1.0,,OK,1,2
-,,,,,,caucafall,0.8636363636363636,1.0,0.76,,16.1,,UNAVAILABLE (see status),,,,,,CC BY 4.0,,,,,,50,,,,,,,,,,,CAUCAFall,,,,"PARTIAL: Mendeley's file-listing API has no working pagination (see module docstring) -- only ~50 frames of ONE activity from ONE subject were reachable, with no activity-name metadata, so fall-vs-ADL event-level accuracy could NOT be computed. Reporting person-detection accuracy on the frames that were reachable instead. Manual full access: https://data.mendeley.com/datasets/7w7fccy7ky/4 -> 'Download All Files'.",,
-,,,,,,uhctd,,,,https://github.com/QuantitativeImagingLaboratory/ctd-devkit,0.0,,,,,,,,,,https://pmantini.github.io/profile/projects/uhctd/,,,,,,,,,,,,,,,UHCTD,,,,"SKIPPED: requires a signed Dataset Agreement (not an anonymous/instant download) -- verified live by visiting the project page. Manual steps: open https://pmantini.github.io/profile/projects/uhctd/, follow the 'Dataset Agreement' link, and once granted access use the devkit at https://github.com/QuantitativeImagingLaboratory/ctd-devkit to prepare the data. The synthetic covered/frozen tamper test (see 'Synthetic Tamper Test' in this report) runs regardless and exercises the same TamperDetector classes/thresholds.",,
-,,,,,,synthetic_tamper,,,,,0.4,,,,,,,,,,,,6,,,,,,,,,,,,,Synthetic Tamper Test,,,,OK,,
+dataset,metric,value,ci_low,ci_high,n,quality,note
+crowdhuman,detection_precision,0.9201422567086971,0.9100597106337648,0.9291824767882945,3093,headline,"IoU 0.5, production pipeline"
+crowdhuman,detection_recall,0.41559579439252337,0.4039739377453838,0.4273122928325541,6848,headline,"IoU 0.5, production pipeline"
+crowdhuman,detection_f1,0.5725782114475405,0.5341886422745564,0.6132116538974367,,headline,
+crowdhuman,ap50_coco101,0.6434772617498274,,,,headline,"conf>=0.001, 101-pt"
+crowdhuman,count_mae_per_image,12.39,10.152750000000001,14.816833333333332,300,headline,
+crowdhuman,count_relative_mae,0.5427862149532711,0.49448380727165336,0.5865803494459032,300,headline,
+crowdhuman_mirror_pilot,detection_precision,0.42140026420079263,0.38670857093417427,0.45688565146210486,757,pilot,"IoU 0.5, production pipeline"
+crowdhuman_mirror_pilot,detection_recall,0.9637462235649547,0.937710034167768,0.979141783051189,331,pilot,"IoU 0.5, production pipeline"
+crowdhuman_mirror_pilot,detection_f1,0.5863970588235294,0.5193966338520164,0.6521139924044623,,pilot,
+mot20,detection_precision,0.948868608576072,0.9438224997681487,0.9534837928718406,7999,headline,"IoU 0.5, production pipeline"
+mot20,detection_recall,0.38198288877705083,0.37525059934345784,0.38876080178813277,19870,headline,"IoU 0.5, production pipeline"
+mot20,detection_f1,0.5446912339875847,0.5334699424442699,0.5601232409057294,,headline,
+mot20,count_mae,27.38927738927739,25.48939393939394,29.149184149184148,429,headline,
+mot20,count_relative_mae,0.591343734272773,0.5723354584340141,0.6072717447819163,429,headline,
+mot20,tracking_mota,0.13190739808756924,,,,headline,pose-model tracker
+mot20,tracking_idf1,0.22055360554494158,,,,headline,pose-model tracker
+mot20,tracking_motp_mean_iou,0.8428242080617496,,,,headline,pose-model tracker
+mot20,tracking_idsw,2,,,,headline,pose-model tracker
+mot20,tracking_frag,40,,,,headline,pose-model tracker
+mot20,tracking_mota_motmetrics,0.13190739808756924,,,,headline,reference cross-check (motmetrics 1.4.0)
+mot20,tracking_idf1_motmetrics,0.22055360554494158,,,,headline,reference cross-check (motmetrics 1.4.0)
+mot20,tracking_idsw_motmetrics,2,,,,headline,reference cross-check (motmetrics 1.4.0)
+mot20,tracking_frag_motmetrics,40,,,,headline,reference cross-check (motmetrics 1.4.0)
+mall,count_mae,13.442,12.780975,14.125212499999998,2000,headline,block bootstrap
+mall,count_rmse,14.093012452985345,13.409795836707541,14.804149755880966,2000,headline,block bootstrap
+mall,count_bias,-13.442,-14.1252125,-12.780975000000002,2000,headline,block bootstrap
+mall,count_relative_mae,0.43142100617828777,0.42016686766577643,0.4426355624495828,2000,headline,block bootstrap
+mall,zone_per_cell_mae,1.49425,,,,headline,
+mall,red_cell_precision,0.8146763722211292,0.8037582882525122,0.8251191843199549,5083,headline,
+mall,red_cell_recall,0.41997971602434075,0.4102707886626461,0.4297509709542544,9860,headline,
+mall,crowd_alert_frame_agreement,0.806,0.7880899514249193,0.8227368156389538,2000,headline,bottom-right quarter
+mall,crowd_alert_episode_recall,0.9803921568627451,0.8969543127385502,0.9965303073589391,51,headline,bottom-right quarter
+mall,crowd_alert_episode_precision,0.8620689655172413,0.6944100627964798,0.9450256003588804,29,headline,bottom-right quarter
+mall,crowd_alert_synthetic_checks_passed,4/4,,,,functional check,
+le2i,every_frame:recall_fall,0.8,0.5839825677481064,0.919342337420202,20,pilot,every frame
+le2i,every_frame:precision,1.0,0.8063923194655637,1.0,16,pilot,every frame
+le2i,every_frame:false_alarm_rate_stand,0.0,0.0,0.16112515805281938,20,pilot,every frame
+le2i,every_frame:alert_rate Fall (fall events; should fire),0.8,0.5839825677481064,0.919342337420202,20,pilot,every frame
+le2i,every_frame:alert_rate Lie (already lying; posture detection),0.65,0.43285427668523624,0.818808175898918,20,pilot,every frame
+le2i,every_frame:alert_rate Stand (daily activity; should NOT fire),0.0,0.0,0.16112515805281938,20,pilot,every frame
+le2i,every_frame:alert_rate Likefall (fall-like movement; reported only),0.0,0.0,0.16112515805281938,20,pilot,every frame
+le2i,every_frame:alert_rate Blank (empty room sanity check; should NOT fire),0.0,0.0,0.16112515805281938,20,pilot,every frame
+le2i,production_cadence:recall_fall,0.0,0.0,0.16112515805281938,20,pilot,2.8 Hz
+le2i,production_cadence:precision,,,,0,pilot,2.8 Hz
+le2i,production_cadence:false_alarm_rate_stand,0.0,0.0,0.16112515805281938,20,pilot,2.8 Hz
+le2i,production_cadence:alert_rate Fall (fall events; should fire),0.0,0.0,0.16112515805281938,20,pilot,2.8 Hz
+le2i,production_cadence:alert_rate Lie (already lying; posture detection),0.5,0.2992980081982123,0.7007019918017877,20,pilot,2.8 Hz
+le2i,production_cadence:alert_rate Stand (daily activity; should NOT fire),0.0,0.0,0.16112515805281938,20,pilot,2.8 Hz
+le2i,production_cadence:alert_rate Likefall (fall-like movement; reported only),0.0,0.0,0.16112515805281938,20,pilot,2.8 Hz
+le2i,production_cadence:alert_rate Blank (empty room sanity check; should NOT fire),0.0,0.0,0.16112515805281938,20,pilot,2.8 Hz
+ur_fall,1 Hz:recall,0.03333333333333333,0.005908590381612455,0.16670390991409173,30,headline,
+ur_fall,1 Hz:precision_event_level,0.1,0.017876213095072896,0.4041500267952385,10,headline,
+ur_fall,1 Hz:adl_sequences_with_false_alarm,0.2,0.10499989725437704,0.347573063463995,40,headline,
+ur_fall,1 Hz:false_alarms_per_hour,108.71267196063079,,,,headline,
+ur_fall,1 Hz:latency_s_from_fall_onset,2.2,2.2,2.2,1,headline,
+ur_fall,1 Hz:false_alarm_rate adl_with_lying,0.5,0.27999563610326017,0.7200043638967398,16,headline,dataset label: person lying somewhere in the ADL clip
+ur_fall,1 Hz:false_alarm_rate adl_without_lying,0.0,1.3877787807814457e-17,0.13797620467498017,24,headline,no lying frame in the ADL clip
+ur_fall,2 Hz:recall,0.26666666666666666,0.14182663319596317,0.4444796169518888,30,headline,
+ur_fall,2 Hz:precision_event_level,0.4,0.21880653237281705,0.6134184992377469,20,headline,
+ur_fall,2 Hz:adl_sequences_with_false_alarm,0.275,0.16108016247667337,0.42834955806210573,40,headline,
+ur_fall,2 Hz:false_alarms_per_hour,144.95022928084106,,,,headline,
+ur_fall,2 Hz:latency_s_from_fall_onset,1.8125,1.6041666666666665,2.020833333333333,8,headline,
+ur_fall,2 Hz:false_alarm_rate adl_with_lying,0.625,0.38641040545502714,0.8151876744113636,16,headline,dataset label: person lying somewhere in the ADL clip
+ur_fall,2 Hz:false_alarm_rate adl_without_lying,0.041666666666666664,0.0073934561655057685,0.20241806478655938,24,headline,no lying frame in the ADL clip
+ur_fall,2.8 Hz:recall,0.3333333333333333,0.19230498083676134,0.5121994835545616,30,headline,
+ur_fall,2.8 Hz:precision_event_level,0.45454545454545453,0.2692029418081331,0.6534020467926505,22,headline,
+ur_fall,2.8 Hz:adl_sequences_with_false_alarm,0.3,0.18074845229746528,0.45430018818144935,40,headline,
+ur_fall,2.8 Hz:false_alarms_per_hour,144.95022928084106,,,,headline,
+ur_fall,2.8 Hz:latency_s_from_fall_onset,1.4899999999999998,1.2799166666666664,1.6766666666666665,10,headline,
+ur_fall,2.8 Hz:false_alarm_rate adl_with_lying,0.625,0.38641040545502714,0.8151876744113636,16,headline,dataset label: person lying somewhere in the ADL clip
+ur_fall,2.8 Hz:false_alarm_rate adl_without_lying,0.08333333333333333,0.023158815297043306,0.25848802193210685,24,headline,no lying frame in the ADL clip
+ur_fall,5 Hz:recall,0.5,0.33154125640533766,0.6684587435946623,30,headline,
+ur_fall,5 Hz:precision_event_level,0.5357142857142857,0.358126892344679,0.7046843001720462,28,headline,
+ur_fall,5 Hz:adl_sequences_with_false_alarm,0.325,0.200845022317827,0.47982253810122333,40,headline,
+ur_fall,5 Hz:false_alarms_per_hour,157.02941505424448,,,,headline,
+ur_fall,5 Hz:latency_s_from_fall_onset,1.2933333333333332,1.1288888888888888,1.4555555555555557,15,headline,
+ur_fall,5 Hz:false_alarm_rate adl_with_lying,0.625,0.38641040545502714,0.8151876744113636,16,headline,dataset label: person lying somewhere in the ADL clip
+ur_fall,5 Hz:false_alarm_rate adl_without_lying,0.125,0.04344334080123444,0.31003881270500067,24,headline,no lying frame in the ADL clip
+ur_fall,10 Hz:recall,0.8,0.6269430358685175,0.9049489282271013,30,headline,
+ur_fall,10 Hz:precision_event_level,0.631578947368421,0.47283959557009003,0.7661578075284404,38,headline,
+ur_fall,10 Hz:adl_sequences_with_false_alarm,0.325,0.200845022317827,0.47982253810122333,40,headline,
+ur_fall,10 Hz:false_alarms_per_hour,169.1086008276479,,,,headline,
+ur_fall,10 Hz:latency_s_from_fall_onset,0.9583333333333334,0.8471875000000001,1.075,24,headline,
+ur_fall,10 Hz:false_alarm_rate adl_with_lying,0.625,0.38641040545502714,0.8151876744113636,16,headline,dataset label: person lying somewhere in the ADL clip
+ur_fall,10 Hz:false_alarm_rate adl_without_lying,0.125,0.04344334080123444,0.31003881270500067,24,headline,no lying frame in the ADL clip
+caucafall,detection_precision,1.0,0.908190131774416,0.9999999999999999,38,pilot,"IoU 0.5, production pipeline"
+caucafall,detection_recall,0.76,0.6258731624205708,0.8570260860300828,50,pilot,"IoU 0.5, production pipeline"
+caucafall,detection_f1,0.8636363636363636,0.7804878048780487,0.9361702127659575,,pilot,
+uhctd,status,"SKIPPED: requires a signed Dataset Agreement (not an anonymous/instant download) -- verified live by visiting the project page. Manual steps: open https://pmantini.github.io/profile/projects/uhctd/, follow the 'Dataset Agreement' link, and once granted access use the devkit at https://github.com/QuantitativeImagingLaboratory/ctd-devkit to prepare the data. Until then, tamper results come only from the functional characterisation (tamper_functional), which is not an accuracy measure.",,,,not run,
+tamper_functional,scenarios_matching_design,12/12,,,,functional check (not an accuracy measurement),
+tamper_functional,scenario: real moving footage (Mall),correctly quiet,,,,functional check (not an accuracy measurement),"expected normal, observed normal"
+tamper_functional,scenario: lens fully covered (black),tamper detected,,,,functional check (not an accuracy measurement),"expected covered, observed covered"
+tamper_functional,"scenario: hand over lens, auto-exposure (bright, featureless)",tamper detected,,,,functional check (not an accuracy measurement),"expected covered, observed covered"
+tamper_functional,scenario: frozen feed: identical frame replayed,tamper detected,,,,functional check (not an accuracy measurement),"expected frozen, observed frozen"
+tamper_functional,scenario: frozen feed replayed through JPEG re-encoding,tamper detected,,,,functional check (not an accuracy measurement),"expected frozen, observed frozen"
+tamper_functional,scenario: legitimately static scene with sensor noise (sigma 2),FALSE ALARM,,,,functional check (not an accuracy measurement),"expected frozen, observed frozen"
+tamper_functional,scenario: legitimately dark scene (real footage at 8% brightness),FALSE ALARM,,,,functional check (not an accuracy measurement),"expected covered, observed covered"
+tamper_functional,scenario: half of lens covered (moving scene),tamper missed,,,,functional check (not an accuracy measurement),"expected normal, observed normal"
+tamper_functional,scenario: defocused / smeared lens (Gaussian blur 51 px),tamper missed,,,,functional check (not an accuracy measurement),"expected covered if contrast < TAMPER_UNIFORM_STD else normal, observed normal"
+tamper_functional,"scenario: camera re-pointed (view shifted 35% x, 25% y)",tamper missed,,,,functional check (not an accuracy measurement),"expected normal, observed normal"
+tamper_functional,scenario: gradual dimming to near black over 100 frames,tamper detected,,,,functional check (not an accuracy measurement),"expected covered, observed covered"
+tamper_functional,"scenario: covered for 30 frames, then uncovered",tamper detected,,,,functional check (not an accuracy measurement),"expected covered then cleared, observed covered"
+whatif_detection,crowdhuman production: recall,0.41559579439252337,0.4039739377453838,0.4273122928325541,6848,what-if (NOT production),"production: yolov8n, 640 px, conf 0.25"
+whatif_detection,crowdhuman production: precision,0.9201422567086971,0.9100597106337648,0.9291824767882945,3093,what-if (NOT production),"production: yolov8n, 640 px, conf 0.25"
+whatif_detection,crowdhuman production: model_ms_per_frame,600.5997424746668,557.1442855518776,649.5206003937593,299,what-if (NOT production),"production: yolov8n, 640 px, conf 0.25"
+whatif_detection,crowdhuman imgsz_960: recall,0.514018691588785,0.5021764994051642,0.5258451647202994,6848,what-if (NOT production),"yolov8n, 960 px"
+whatif_detection,crowdhuman imgsz_960: precision,0.903954802259887,0.8942980113297625,0.9128153700728341,3894,what-if (NOT production),"yolov8n, 960 px"
+whatif_detection,crowdhuman imgsz_960: model_ms_per_frame,1126.168194315692,1072.2623890732773,1189.7555936292351,299,what-if (NOT production),"yolov8n, 960 px"
+whatif_detection,crowdhuman imgsz_1280: recall,0.5823598130841121,0.5706362782597325,0.5939909984773661,6848,what-if (NOT production),"yolov8n, 1280 px"
+whatif_detection,crowdhuman imgsz_1280: precision,0.8975917173081251,0.8883305789445644,0.9061659266576287,4443,what-if (NOT production),"yolov8n, 1280 px"
+whatif_detection,crowdhuman imgsz_1280: model_ms_per_frame,1841.7722538471212,1775.9471996921618,1911.8198030189953,299,what-if (NOT production),"yolov8n, 1280 px"
+whatif_detection,crowdhuman conf_015: recall,0.4852511682242991,0.47342560170983256,0.49709327249150265,6848,what-if (NOT production),"yolov8n, 640 px, conf 0.15"
+whatif_detection,crowdhuman conf_015: precision,0.8602122702562776,0.8489188908640063,0.8707899541034202,3863,what-if (NOT production),"yolov8n, 640 px, conf 0.15"
+whatif_detection,crowdhuman conf_015: model_ms_per_frame,538.5763558542961,502.44921319489214,580.0936771252045,299,what-if (NOT production),"yolov8n, 640 px, conf 0.15"
+whatif_detection,crowdhuman yolov8s_960: recall,0.5309579439252337,0.519124305100241,0.542756869843491,6848,what-if (NOT production),"yolov8s, 960 px"
+whatif_detection,crowdhuman yolov8s_960: precision,0.9167927382753404,0.9077882909882424,0.924990557812964,3966,what-if (NOT production),"yolov8s, 960 px"
+whatif_detection,crowdhuman yolov8s_960: model_ms_per_frame,2371.7852464874536,2300.8710959690447,2447.941272692025,299,what-if (NOT production),"yolov8s, 960 px"
+whatif_detection,crowdhuman pose_as_counter: recall,0.3631717289719626,0.35186112247121776,0.3746357599708719,6848,what-if (NOT production),"yolov8s-pose boxes as counter, 640 px"
+whatif_detection,crowdhuman pose_as_counter: precision,0.9342599549211119,0.9242057796837473,0.9430625990677688,2662,what-if (NOT production),"yolov8s-pose boxes as counter, 640 px"
+whatif_detection,crowdhuman pose_as_counter: model_ms_per_frame,1209.5786016727416,1154.3438268474827,1270.735017859229,299,what-if (NOT production),"yolov8s-pose boxes as counter, 640 px"
+whatif_detection,mall production: count_mae,11.886,10.3259,13.6281,500,what-if (NOT production),"production: yolov8n, 640 px, conf 0.25"
+whatif_detection,mall production: count_relative_mae,0.4274309551208285,0.4056159186020749,0.45434973636143067,500,what-if (NOT production),"production: yolov8n, 640 px, conf 0.25"
+whatif_detection,mall imgsz_960: count_mae,9.412,7.995900000000001,10.93205,500,what-if (NOT production),"yolov8n, 960 px"
+whatif_detection,mall imgsz_960: count_relative_mae,0.338463751438435,0.31140296221769875,0.3684099959620414,500,what-if (NOT production),"yolov8n, 960 px"
+whatif_detection,mall imgsz_1280: count_mae,8.694,7.4456,10.01815,500,what-if (NOT production),"yolov8n, 1280 px"
+whatif_detection,mall imgsz_1280: count_relative_mae,0.3126438434982739,0.28645455274392023,0.3426971345749035,500,what-if (NOT production),"yolov8n, 1280 px"
+whatif_detection,mall conf_015: count_mae,9.366,8.04795,10.818449999999997,500,what-if (NOT production),"yolov8n, 640 px, conf 0.15"
+whatif_detection,mall conf_015: count_relative_mae,0.3368095512082854,0.3148868305907521,0.36303908307823735,500,what-if (NOT production),"yolov8n, 640 px, conf 0.15"
+whatif_detection,mall yolov8s_960: count_mae,8.542,7.213850000000001,10.02805,500,what-if (NOT production),"yolov8s, 960 px"
+whatif_detection,mall yolov8s_960: count_relative_mae,0.3071777905638665,0.2806615826553664,0.33795528638791006,500,what-if (NOT production),"yolov8s, 960 px"
+whatif_detection,mall pose_as_counter: count_mae,17.984,15.838,20.2421,500,what-if (NOT production),"yolov8s-pose boxes as counter, 640 px"
+whatif_detection,mall pose_as_counter: count_relative_mae,0.6467203682393556,0.6321415315375011,0.663277084501913,500,what-if (NOT production),"yolov8s-pose boxes as counter, 640 px"
+whatif_detection,cycle production_cycle: seconds_per_cycle,1.5448593338946535,1.5370456079620192,1.5526469712686637,59,what-if (NOT production),"production cycle: detect (yolov8n) + pose (yolov8s-pose), 640 px"
+whatif_detection,cycle pose_only: seconds_per_cycle,1.1157408661013706,1.108300492709988,1.1245370995348898,59,what-if (NOT production),pose model only (its boxes also used for counting)
+whatif_detection,cycle pose_480: seconds_per_cycle,1.16293104406756,1.1488243554653064,1.1822095814858633,59,what-if (NOT production),detect 640 px + pose 480 px
+min_spec,line_1,"Camera frame rate: production analyses about one frame per inference cycle (measured here: 1.54 s per cycle = 0.7 Hz on this machine), so a camera only needs a frame rate at or above that rate; extra camera fps is never seen by the model.",,,,,
+min_spec,line_2,"Fall detection at production cadence (2.8 Hz): recall 0.33 [0.19-0.51], n=30; ADL sequences with a false alarm 0.30 [0.18-0.45], n=40.",,,,,
+min_spec,line_3,Minimum inference rate keeping fall recall >= 90% of best (0.80): 10 Hz.,,,,,
+min_spec,line_4,"Resolution (CrowdHuman person recall, target >= 0.8): target not met even at the largest size (best recall 0.44).",,,,,
+min_spec,line_5,"Resolution (Mall counting, target relative MAE <= 0.2): target not met even at the largest size (best relative MAE 0.43).",,,,,
+min_spec,line_6,"Person height (crowdhuman, recall target >= 0.8, visibility >= 0.5): recall target 0.8 not reached even for the largest people.",,,,,
+min_spec,line_7,"Person height (mot20, recall target >= 0.8, visibility >= 0.5): people must be at least 15% of frame height.",,,,,

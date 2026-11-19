@@ -1,135 +1,137 @@
-"""Resolution sweep: downscale real frames to progressively lower
-resolutions -- including VisionGuard's own config.FRAME_SIZE -- and re-run
-the real detector.
+"""Resolution sweep (audit #12).
 
-Uses TWO sources, not one, because MOT20-01 alone gave a near-flat, low-
-confidence signal: that scene is so densely crowded (>60 people/frame)
-that yolov8n is already saturated by occlusion regardless of resolution,
-masking any true resolution effect. Mall Dataset (a far less saturated,
-corridor-style scene closer to VisionGuard's own camera framing) is added
-as a second source with its own count-MAE-based signal, giving the
-minimum-resolution derivation something with an actual gradient to read.
+- Aspect ratio is PRESERVED (the old sweep squashed 4:3 Mall frames to 16:9).
+- Widths go BELOW the network input size. The production model letterboxes
+  every frame to imgsz=640 on its long side, so any frame wider than 640 px
+  reaches the network at the same size, and narrower frames are upscaled
+  (with no new detail). Widths >640 are therefore expected to be flat; the
+  informative range is 640 and below.
+- The old "config.FRAME_SIZE (480x270)" point is gone: FRAME_SIZE is only the
+  size of the MJPEG stream sent to the dashboard. Production feeds the
+  full-resolution camera frame to the model.
+- Two sources: official CrowdHuman val (box recall/precision with ignore
+  regions) and Mall (count relative MAE). Both get 95% CIs.
 """
 from __future__ import annotations
 
 import os
 
+from .. import common
 from .. import http_utils as hu
 from .. import metrics as m
-from .. import model_runner as mr
 
-MOT20_NATIVE_W, MOT20_NATIVE_H = 1920, 1080
-MALL_NATIVE_W, MALL_NATIVE_H = 640, 480
+WIDTHS = [640, 480, 416, 320, 256, 160]
 
 
-def _targets(native_w, native_h):
-    import config as vg_config
-    cfg_w, cfg_h = vg_config.FRAME_SIZE
-    raw = [
-        ("native", native_w, native_h),
-        ("720p" if native_w >= 1280 else "480p", min(1280, native_w), min(720, native_h)),
-        (f"config.FRAME_SIZE ({cfg_w}x{cfg_h})", min(cfg_w, native_w), min(cfg_h, native_h)),
-        ("360p", min(640, native_w), min(360, native_h)),
-        ("240p", min(320, native_w), min(240, native_h)),
-    ]
-    # Drop duplicate/non-decreasing entries (e.g. Mall is already 640x480,
-    # smaller than "720p") while preserving order and labels.
-    seen = set()
-    out = []
-    for label, w, h in raw:
-        key = (w, h)
-        if key in seen:
-            continue
-        seen.add(key)
-        out.append((label, w, h))
-    return out
-
-
-def _mot20_points(mot20_dir, gt_path, n_frames=30):
+def _resize_keep_aspect(frame, width):
     import cv2
-    from ..datasets.mot20 import _load_gt
+    h, w = frame.shape[:2]
+    if width >= w:
+        return frame, 1.0
+    s = width / w
+    return cv2.resize(frame, (width, max(1, round(h * s))), interpolation=cv2.INTER_AREA), s
 
-    img_dir = os.path.join(mot20_dir, "img1")
-    if not os.path.isdir(img_dir) or not os.path.isfile(gt_path):
-        return None
-    frame_files = sorted(f for f in os.listdir(img_dir) if f.endswith(".jpg"))[:n_frames]
-    gt_by_frame = _load_gt(gt_path)
-    mr.warmup()
 
+def _scale(boxes, s):
+    return [tuple(v * s for v in b[:4]) for b in boxes]
+
+
+def _crowdhuman_points(items, widths):
+    import cv2
+    from .. import model_runner as mr
     points = []
-    for label, tw, th in _targets(MOT20_NATIVE_W, MOT20_NATIVE_H):
-        sx, sy = tw / MOT20_NATIVE_W, th / MOT20_NATIVE_H
-        tp = fp = fn = 0
-        pred_counts, gt_counts = [], []
-        for idx, fname in enumerate(frame_files, start=1):
-            frame = cv2.imread(os.path.join(img_dir, fname))
+    for label, width in [("native", None)] + [(f"{w}px wide", w) for w in widths]:
+        preds, gts, igns = [], [], []
+        for path, gt, ign, _ in items:
+            frame = cv2.imread(path)
             if frame is None:
                 continue
-            resized = cv2.resize(frame, (tw, th), interpolation=cv2.INTER_AREA)
-            gt = gt_by_frame.get(idx, [])
-            gt_boxes = [(g[1] * sx, g[2] * sy, g[3] * sx, g[4] * sy) for g in gt]
-            det_result, _ = mr.detect_persons(resized, persist=False)
-            pred_boxes = [(x1, y1, x2, y2, c) for x1, y1, x2, y2, c in mr.boxes_xyxy_conf(det_result)]
-            t, f_, n_, _ = m.match_boxes(pred_boxes, gt_boxes, iou_thresh=0.5)
-            tp += t; fp += f_; fn += n_
-            pred_counts.append(len(pred_boxes))
-            gt_counts.append(len(gt_boxes))
-        precision, recall, f1 = m.precision_recall_f1(tp, fp, fn)
-        mae, rmse = m.mae_rmse(pred_counts, gt_counts)
-        points.append({"label": label, "width": tw, "height": th,
-                       "precision": precision, "recall": recall, "f1": f1,
-                       "count_mae": mae, "count_rmse": rmse})
-        hu.log(f"Resolution sweep (MOT20-01, saturated/dense scene): {label} "
-               f"-> recall={recall:.2f} MAE={mae:.1f}")
+            img, s = (frame, 1.0) if width is None else _resize_keep_aspect(frame, width)
+            res, _ = mr.detect_persons(img)
+            preds.append(mr.boxes_xyxy_conf(res))
+            gts.append(_scale(gt, s))
+            igns.append(_scale(ign, s))
+        det = common.evaluate_detection(preds, gts, igns)
+        det.pop("_per_frame")
+        points.append({"label": label, "width": width, "recall": det["recall"],
+                       "precision": det["precision"], "f1": det["f1"], "n_gt": det["n_gt"]})
+        hu.log(f"Resolution sweep (CrowdHuman): {label} -> recall={det['recall']['value']:.3f}")
     return points
 
 
-def _mall_points(mall_root, n_frames=60):
+def _mall_points(frames_dir, gt_counts, frame_ids, widths, seed):
     import cv2
-    import scipy.io as sio
-
-    extract_dir = os.path.join(mall_root, "mall_dataset")
-    gt_mat = os.path.join(extract_dir, "mall_gt.mat")
-    frames_dir = os.path.join(extract_dir, "frames")
-    if not os.path.isfile(gt_mat) or not os.path.isdir(frames_dir):
-        return None
-    gt = sio.loadmat(gt_mat)
-    gt_counts_all = gt["count"].flatten().tolist()
-    n_frames = min(n_frames, len(gt_counts_all))
-    mr.warmup()
-
+    from .. import model_runner as mr
     points = []
-    for label, tw, th in _targets(MALL_NATIVE_W, MALL_NATIVE_H):
-        pred_counts, gts = [], []
-        for i in range(1, n_frames + 1):
+    for label, width in [("native 640x480", None)] + [(f"{w}px wide", w) for w in widths if w < 640]:
+        preds, gts = [], []
+        for i in frame_ids:
             frame = cv2.imread(os.path.join(frames_dir, f"seq_{i:06d}.jpg"))
             if frame is None:
                 continue
-            resized = (cv2.resize(frame, (tw, th), interpolation=cv2.INTER_AREA)
-                      if (tw, th) != (frame.shape[1], frame.shape[0]) else frame)
-            det_result, _ = mr.detect_persons(resized, persist=False)
-            pred_counts.append(len(mr.boxes_xyxy_conf(det_result)))
-            gts.append(gt_counts_all[i - 1])
-        mae, rmse = m.mae_rmse(pred_counts, gts)
-        mean_gt = sum(gts) / len(gts) if gts else 1
-        accuracy_proxy = max(0.0, 1 - mae / mean_gt) if mean_gt else None
-        points.append({"label": label, "width": tw, "height": th,
-                       "count_mae": mae, "count_rmse": rmse,
-                       "accuracy_proxy": accuracy_proxy})
-        hu.log(f"Resolution sweep (Mall, less-saturated scene): {label} "
-               f"-> MAE={mae:.1f} accuracy_proxy={accuracy_proxy}")
+            img = frame if width is None else _resize_keep_aspect(frame, width)[0]
+            res, _ = mr.detect_persons(img)
+            preds.append(len(res.boxes))
+            gts.append(gt_counts[i - 1])
+        ce = m.count_errors(preds, gts, seed=seed)
+        points.append({"label": label, "width": width or 640, "relative_mae": ce["relative_mae"],
+                       "mae": ce["mae"], "n_frames": ce["n"]})
+        hu.log(f"Resolution sweep (Mall): {label} -> relMAE={ce['relative_mae']['value']:.3f}")
     return points
 
 
-def run(mot20_dir, mot20_gt_path, mall_root, n_frames=30):
-    mot20_points = _mot20_points(mot20_dir, mot20_gt_path, n_frames=n_frames)
-    mall_points = _mall_points(mall_root, n_frames=max(n_frames, 60))
-    if mot20_points is None and mall_points is None:
-        return {"status": "SKIPPED: neither MOT20-01 nor Mall frames/gt available"}
-    return {
-        "status": "OK",
-        "mot20_points": mot20_points,
-        "mall_points": mall_points,
-        # Kept for backward-compat with any code still reading "points".
-        "points": mot20_points or [],
-    }
+def run(args) -> dict:
+    from ..datasets import crowdhuman, mall
+    out = {"status": "OK", "widths": WIDTHS,
+           "network_input_note": "production model letterboxes to imgsz=640: frames wider than "
+                                 "640 px reach the network at the same size",
+           "frame_size_note": "config.FRAME_SIZE (480x270) is the dashboard stream size only; "
+                              "the model receives full-resolution frames"}
+    try:
+        items = crowdhuman.load_official(os.path.join(args.data_root, "crowdhuman"),
+                                         args.crowdhuman_images, args.seed)["items"]
+        items = items[:args.resolution_images]
+        out["crowdhuman_points"] = _crowdhuman_points(items, WIDTHS)
+        out["crowdhuman_n_images"] = len(items)
+    except Exception as e:  # noqa: BLE001
+        out["crowdhuman_status"] = f"SKIPPED: {e}"
+    try:
+        frames_dir, counts, _ = mall.load(os.path.join(args.data_root, "mall"))
+        ids = sorted(common.seeded_sample(range(1, len(counts) + 1), args.resolution_frames, args.seed))
+        out["mall_points"] = _mall_points(frames_dir, counts, ids, WIDTHS, args.seed)
+        out["mall_n_frames"] = len(ids)
+    except Exception as e:  # noqa: BLE001
+        out["mall_status"] = f"SKIPPED: {e}"
+    if "crowdhuman_points" not in out and "mall_points" not in out:
+        out["status"] = "SKIPPED: neither CrowdHuman nor Mall available"
+    return out
+
+
+def minimum_width(points, key, target, higher_is_better, rel=0.9):
+    """Smallest width such that IT AND EVERY LARGER WIDTH meet both the
+    absolute target and >= rel x best (<= best / rel for errors).
+    Returns (width_or_None, best, reason)."""
+    vals = [(p["width"] or float("inf"), p[key]["value"]) for p in points if p[key]["value"] is not None]
+    if not vals:
+        return None, None, "no data"
+    best = max(v for _, v in vals) if higher_is_better else min(v for _, v in vals)
+
+    def ok(v):
+        if higher_is_better:
+            return v >= target and v >= rel * best
+        return v <= target and v <= best / rel
+
+    vals.sort(key=lambda t: -t[0])  # largest first
+    chosen = None
+    for w, v in vals:
+        if ok(v):
+            chosen = w
+        else:
+            break
+    if chosen is None:
+        return None, best, (f"target not met even at the largest size (best "
+                            f"{'recall' if higher_is_better else 'relative MAE'} {best:.2f})")
+    return (None if chosen == float("inf") else chosen), best, "ok"
+
+
+__all__ = ["run", "minimum_width", "WIDTHS"]

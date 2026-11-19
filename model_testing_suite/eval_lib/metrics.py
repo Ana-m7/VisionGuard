@@ -1,23 +1,35 @@
 """Metric implementations used across the evaluation suite.
 
-Kept deliberately simple and dependency-light (no pycocotools / motmetrics
-required — both are optional accelerators, used only if already installed).
-Every function here operates on plain Python lists/tuples so it's easy to
-unit-sanity-check independently of any dataset-loading code.
+Dependency-light (numpy + scipy only). Every function takes plain Python
+lists/tuples so it can be unit-tested by hand (see tests_eval/).
+
+Box convention everywhere: (x1, y1, x2, y2[, conf]).
+
+Contents
+- iou / ioa, greedy single-threshold matching (with optional ignore regions)
+- precision / recall / F1
+- Wilson score interval for proportions; (block) bootstrap CIs
+- count MAE / RMSE / bias with bootstrap CIs
+- COCO-style 101-point AP50 (and the legacy 11-point variant, for comparison
+  with the archived pre-audit run only)
+- CLEAR-MOT (MOTA, MOTP, IDSW, Frag) and IDF1
 """
 from __future__ import annotations
 
 import math
-from collections import defaultdict
+from typing import Callable, Sequence
+
+import numpy as np
+
+Z_95 = 1.959963984540054
 
 
+# ---------------------------------------------------------------- geometry
 def iou(box_a, box_b) -> float:
-    """box = (x1, y1, x2, y2)."""
-    ax1, ay1, ax2, ay2 = box_a
-    bx1, by1, bx2, by2 = box_b
-    ix1, iy1 = max(ax1, bx1), max(ay1, by1)
-    ix2, iy2 = min(ax2, bx2), min(ay2, by2)
-    iw, ih = max(0.0, ix2 - ix1), max(0.0, iy2 - iy1)
+    ax1, ay1, ax2, ay2 = box_a[:4]
+    bx1, by1, bx2, by2 = box_b[:4]
+    iw = max(0.0, min(ax2, bx2) - max(ax1, bx1))
+    ih = max(0.0, min(ay2, by2) - max(ay1, by1))
     inter = iw * ih
     area_a = max(0.0, ax2 - ax1) * max(0.0, ay2 - ay1)
     area_b = max(0.0, bx2 - bx1) * max(0.0, by2 - by1)
@@ -25,33 +37,59 @@ def iou(box_a, box_b) -> float:
     return inter / union if union > 0 else 0.0
 
 
-def match_boxes(pred_boxes, gt_boxes, iou_thresh: float = 0.5):
-    """Greedy highest-IoU-first matching (standard single-IoU-threshold
-    evaluation, same idea pycocotools uses per-threshold).
+def ioa(box, region) -> float:
+    """Intersection over the area of ``box`` (how much of box lies in region)."""
+    ax1, ay1, ax2, ay2 = box[:4]
+    bx1, by1, bx2, by2 = region[:4]
+    iw = max(0.0, min(ax2, bx2) - max(ax1, bx1))
+    ih = max(0.0, min(ay2, by2) - max(ay1, by1))
+    area = max(0.0, ax2 - ax1) * max(0.0, ay2 - ay1)
+    return (iw * ih) / area if area > 0 else 0.0
 
-    pred_boxes / gt_boxes: list of (x1,y1,x2,y2[,conf]).
-    Returns (tp, fp, fn, matched_pairs) where matched_pairs is
-    [(pred_idx, gt_idx, iou), ...].
+
+def _hits_ignore(pred, ignore_boxes, iou_thresh, ioa_thresh) -> bool:
+    for r in ignore_boxes or ():
+        if iou(pred, r) >= iou_thresh or (ioa_thresh is not None and ioa(pred, r) >= ioa_thresh):
+            return True
+    return False
+
+
+# ---------------------------------------------------------------- matching
+def match_boxes(pred_boxes, gt_boxes, iou_thresh: float = 0.5, ignore_boxes=None,
+                ioa_thresh: float | None = 0.5):
+    """Greedy highest-IoU-first one-to-one matching at a single IoU threshold.
+
+    Predictions left unmatched that overlap an ignore region (IoU >= iou_thresh,
+    or intersection-over-prediction-area >= ioa_thresh) are neither TP nor FP
+    (CrowdHuman "mask"/ignore regions, MOTChallenge distractor classes).
+
+    Returns dict(tp, fp, fn, matched=[(pi, gi, iou)], ignored=[pi], fp_idx, fn_idx).
     """
     pairs = []
     for pi, p in enumerate(pred_boxes):
         for gi, g in enumerate(gt_boxes):
-            v = iou(p[:4], g[:4])
+            v = iou(p, g)
             if v >= iou_thresh:
                 pairs.append((v, pi, gi))
     pairs.sort(key=lambda t: -t[0])
-    used_p, used_g = set(), set()
-    matched = []
+    used_p, used_g, matched = set(), set(), []
     for v, pi, gi in pairs:
         if pi in used_p or gi in used_g:
             continue
         used_p.add(pi)
         used_g.add(gi)
         matched.append((pi, gi, v))
-    tp = len(matched)
-    fp = len(pred_boxes) - tp
-    fn = len(gt_boxes) - tp
-    return tp, fp, fn, matched
+    ignored, fp_idx = [], []
+    for pi, p in enumerate(pred_boxes):
+        if pi in used_p:
+            continue
+        if ignore_boxes and _hits_ignore(p, ignore_boxes, iou_thresh, ioa_thresh):
+            ignored.append(pi)
+        else:
+            fp_idx.append(pi)
+    fn_idx = [gi for gi in range(len(gt_boxes)) if gi not in used_g]
+    return {"tp": len(matched), "fp": len(fp_idx), "fn": len(fn_idx),
+            "matched": matched, "ignored": ignored, "fp_idx": fp_idx, "fn_idx": fn_idx}
 
 
 def precision_recall_f1(tp: int, fp: int, fn: int):
@@ -61,63 +99,80 @@ def precision_recall_f1(tp: int, fp: int, fn: int):
     return precision, recall, f1
 
 
-def average_precision_at_iou(frames_pred, frames_gt, iou_thresh: float = 0.5):
-    """A compact, dependency-free COCO-style AP@iou_thresh for a single
-    class ("person"). Ranks all predictions across all frames by
-    confidence, sweeps the confidence threshold, and integrates the
-    precision/recall curve (11-point interpolation, like the original
-    PASCAL VOC / early-COCO AP definition — good enough for an honest
-    comparative number, not a drop-in replacement for pycocotools).
+# ---------------------------------------------------------------- intervals
+def wilson_ci(k: int, n: int, z: float = Z_95):
+    """Wilson score interval for k successes out of n. (None, None) if n == 0."""
+    if n <= 0:
+        return None, None
+    p = k / n
+    denom = 1 + z * z / n
+    centre = (p + z * z / (2 * n)) / denom
+    half = z * math.sqrt(p * (1 - p) / n + z * z / (4 * n * n)) / denom
+    return max(0.0, centre - half), min(1.0, centre + half)
 
-    frames_pred: list of per-frame prediction lists [(x1,y1,x2,y2,conf), ...]
-    frames_gt:   list of per-frame gt lists [(x1,y1,x2,y2), ...] (same length/order)
+
+def proportion(k: int, n: int) -> dict:
+    lo, hi = wilson_ci(k, n)
+    return {"value": (k / n) if n else None, "k": int(k), "n": int(n),
+            "ci_low": lo, "ci_high": hi, "ci_method": "wilson95"}
+
+
+def bootstrap_ci(n_items: int, stat_fn: Callable[[np.ndarray], float], n_boot: int = 2000,
+                 seed: int = 0, block: int = 1, alpha: float = 0.05):
+    """Percentile bootstrap CI of ``stat_fn(indices)``.
+
+    ``block`` > 1 gives a moving-block bootstrap, which keeps runs of
+    consecutive video frames together; ordinary i.i.d. resampling of
+    neighbouring (highly correlated) frames would give a falsely narrow CI.
     """
-    assert len(frames_pred) == len(frames_gt)
-    # Flatten predictions with a frame index, sorted by confidence desc.
-    flat = []
-    for fi, preds in enumerate(frames_pred):
-        for p in preds:
-            conf = p[4] if len(p) > 4 and p[4] is not None else 1.0
-            flat.append((conf, fi, p[:4]))
-    flat.sort(key=lambda t: -t[0])
+    if n_items <= 0:
+        return None, None
+    rng = np.random.default_rng(seed)
+    block = max(1, min(block, n_items))
+    n_blocks = math.ceil(n_items / block)
+    starts_max = n_items - block + 1
+    stats = []
+    for _ in range(n_boot):
+        starts = rng.integers(0, starts_max, size=n_blocks)
+        idx = (starts[:, None] + np.arange(block)[None, :]).ravel()[:n_items]
+        stats.append(stat_fn(idx))
+    lo, hi = np.percentile(stats, [100 * alpha / 2, 100 * (1 - alpha / 2)])
+    return float(lo), float(hi)
 
-    n_gt_total = sum(len(g) for g in frames_gt)
-    if n_gt_total == 0:
-        return 0.0, [], []
 
-    matched_gt = [set() for _ in frames_gt]
-    tps, fps = [], []
-    for conf, fi, pbox in flat:
-        gt_list = frames_gt[fi]
-        best_iou, best_gi = 0.0, -1
-        for gi, gbox in enumerate(gt_list):
-            if gi in matched_gt[fi]:
-                continue
-            v = iou(pbox, gbox)
-            if v > best_iou:
-                best_iou, best_gi = v, gi
-        if best_iou >= iou_thresh and best_gi >= 0:
-            matched_gt[fi].add(best_gi)
-            tps.append(1)
-            fps.append(0)
-        else:
-            tps.append(0)
-            fps.append(1)
+def count_errors(pred_counts: Sequence[float], gt_counts: Sequence[float], seed: int = 0,
+                 block: int = 1) -> dict:
+    """MAE / RMSE / mean signed error (bias) / relative MAE, each with a
+    bootstrap 95% CI."""
+    assert len(pred_counts) == len(gt_counts)
+    p = np.asarray(pred_counts, float)
+    g = np.asarray(gt_counts, float)
+    n = len(p)
+    if n == 0:
+        return {"n": 0}
+    e = p - g
+    mean_gt = float(g.mean())
 
-    cum_tp, cum_fp = 0, 0
-    precisions, recalls = [], []
-    for t, f in zip(tps, fps):
-        cum_tp += t
-        cum_fp += f
-        precisions.append(cum_tp / (cum_tp + cum_fp))
-        recalls.append(cum_tp / n_gt_total)
+    def _mae(i):
+        return float(np.abs(e[i]).mean())
 
-    # 11-point interpolation.
-    ap = 0.0
-    for r_level in [i / 10 for i in range(11)]:
-        p_at_r = [p for p, r in zip(precisions, recalls) if r >= r_level]
-        ap += (max(p_at_r) if p_at_r else 0.0) / 11.0
-    return ap, precisions, recalls
+    def _rmse(i):
+        return float(np.sqrt((e[i] ** 2).mean()))
+
+    def _bias(i):
+        return float(e[i].mean())
+
+    def _rel(i):
+        mg = g[i].mean()
+        return float(np.abs(e[i]).mean() / mg) if mg else float("nan")
+
+    out = {"n": n, "mean_gt_count": mean_gt, "mean_pred_count": float(p.mean()),
+           "bootstrap_block": block}
+    for name, fn in (("mae", _mae), ("rmse", _rmse), ("bias", _bias), ("relative_mae", _rel)):
+        lo, hi = bootstrap_ci(n, fn, seed=seed, block=block)
+        out[name] = {"value": fn(np.arange(n)), "ci_low": lo, "ci_high": hi,
+                     "ci_method": f"bootstrap95(block={block})"}
+    return out
 
 
 def mae_rmse(pred_counts, gt_counts):
@@ -125,112 +180,230 @@ def mae_rmse(pred_counts, gt_counts):
     if not pred_counts:
         return 0.0, 0.0
     errs = [p - g for p, g in zip(pred_counts, gt_counts)]
-    mae = sum(abs(e) for e in errs) / len(errs)
-    rmse = math.sqrt(sum(e * e for e in errs) / len(errs))
-    return mae, rmse
+    return (sum(abs(x) for x in errs) / len(errs),
+            math.sqrt(sum(x * x for x in errs) / len(errs)))
 
 
-def simple_tracking_quality(frames_pred_tracks, frames_gt_tracks, iou_thresh: float = 0.5):
-    """A simplified ID-switch / fragmentation counter (NOT a full MOTA/IDF1
-    implementation — used only if the optional ``motmetrics`` package isn't
-    installed; the caller records which implementation was used).
-
-    frames_pred_tracks: list of per-frame [(track_id, x1,y1,x2,y2), ...]
-    frames_gt_tracks:   list of per-frame [(gt_id, x1,y1,x2,y2), ...]
-
-    For each GT identity, follow which predicted track_id covers it frame by
-    frame (via IoU-best-match); every time that predicted id changes while
-    the GT identity is continuously visible, that's one ID switch.
-    """
-    assert len(frames_pred_tracks) == len(frames_gt_tracks)
-    gt_last_pred_id = {}
-    id_switches = 0
-    fragmentations = 0
-    gt_was_tracked = {}
-    tp_total = fp_total = fn_total = 0
-
-    for pred_frame, gt_frame in zip(frames_pred_tracks, frames_gt_tracks):
-        pred_boxes = [(p[1], p[2], p[3], p[4]) for p in pred_frame]
-        gt_boxes = [(g[1], g[2], g[3], g[4]) for g in gt_frame]
-        _, _, _, matched = match_boxes(
-            [b + (None,) for b in pred_boxes], gt_boxes, iou_thresh)
-        matched_gt_idx = {gi for _, gi, _ in matched}
-        tp_total += len(matched)
-        fp_total += len(pred_frame) - len(matched)
-        fn_total += len(gt_frame) - len(matched)
-
-        for pi, gi, _ in matched:
-            gt_id = gt_frame[gi][0]
-            pred_id = pred_frame[pi][0]
-            prev = gt_last_pred_id.get(gt_id)
-            if prev is not None and prev != pred_id:
-                id_switches += 1
-            gt_last_pred_id[gt_id] = pred_id
-            if gt_was_tracked.get(gt_id) is False:
-                fragmentations += 1
-            gt_was_tracked[gt_id] = True
-        tracked_this_frame = {gt_frame[gi][0] for _, gi, _ in matched}
-        for gt_id in gt_was_tracked:
-            if gt_id not in tracked_this_frame:
-                gt_was_tracked[gt_id] = False
-
-    precision, recall, f1 = precision_recall_f1(tp_total, fp_total, fn_total)
-    return {
-        "id_switches": id_switches,
-        "fragmentations": fragmentations,
-        "detection_precision": precision,
-        "detection_recall": recall,
-        "detection_f1": f1,
-        "implementation": "simplified (motmetrics not used)",
-    }
+def summarize_mean(values: Sequence[float], seed: int = 0) -> dict:
+    vals = [float(v) for v in values if v is not None]
+    if not vals:
+        return {"n": 0, "value": None}
+    arr = np.asarray(vals)
+    lo, hi = bootstrap_ci(len(arr), lambda i: float(arr[i].mean()), seed=seed)
+    return {"n": len(arr), "value": float(arr.mean()), "median": float(np.median(arr)),
+            "min": float(arr.min()), "max": float(arr.max()),
+            "ci_low": lo, "ci_high": hi, "ci_method": "bootstrap95"}
 
 
-def confusion_counts(y_true, y_pred, classes):
-    """classes: ordered list of class labels. Returns a dict
-    {(true_cls, pred_cls): count} plus per-class P/R/F1."""
-    counts = defaultdict(int)
-    for t, p in zip(y_true, y_pred):
-        counts[(t, p)] += 1
-    per_class = {}
-    for c in classes:
-        tp = counts[(c, c)]
-        fp = sum(counts[(o, c)] for o in classes if o != c)
-        fn = sum(counts[(c, o)] for o in classes if o != c)
-        per_class[c] = dict(zip(("precision", "recall", "f1"), precision_recall_f1(tp, fp, fn)))
-    return dict(counts), per_class
-
-
-def event_level_prf1(gt_intervals, pred_events, tolerance_frames: int = 0):
-    """Event-level matching for fall detection: a predicted event (a frame
-    index where an alert was confirmed) is a true positive if it falls
-    within [start - tolerance, end + tolerance] of some ground-truth
-    interval (start, end), each GT interval claimed at most once.
-
-    gt_intervals: [(start_frame, end_frame), ...]
-    pred_events:  [frame_index, ...] (confirmed-alert frame indices)
-    Returns (precision, recall, f1, matched_latencies) where matched_latencies
-    is [pred_frame - gt_start, ...] for matched events (>=0 means the alert
-    fired at/after the true onset, as expected).
-    """
-    claimed = set()
-    tp = 0
-    latencies = []
-    unmatched_preds = []
-    for ev in pred_events:
-        hit = None
-        for gi, (s, e) in enumerate(gt_intervals):
-            if gi in claimed:
+# ---------------------------------------------------------------- AP
+def _ranked_tp_fp(frames_pred, frames_gt, frames_ignore, iou_thresh):
+    flat = []
+    for fi, preds in enumerate(frames_pred):
+        for p in preds:
+            conf = p[4] if len(p) > 4 and p[4] is not None else 1.0
+            flat.append((conf, fi, p[:4]))
+    flat.sort(key=lambda t: -t[0])
+    matched_gt = [set() for _ in frames_gt]
+    flags = []  # 1 = TP, 0 = FP (ignored predictions are dropped)
+    confs = []
+    for conf, fi, pbox in flat:
+        best_iou, best_gi = 0.0, -1
+        for gi, gbox in enumerate(frames_gt[fi]):
+            if gi in matched_gt[fi]:
                 continue
-            if (s - tolerance_frames) <= ev <= (e + tolerance_frames):
-                hit = gi
-                break
-        if hit is not None:
-            claimed.add(hit)
-            tp += 1
-            latencies.append(ev - gt_intervals[hit][0])
+            v = iou(pbox, gbox)
+            if v > best_iou:
+                best_iou, best_gi = v, gi
+        if best_gi >= 0 and best_iou >= iou_thresh:
+            matched_gt[fi].add(best_gi)
+            flags.append(1)
+            confs.append(conf)
+        elif frames_ignore and _hits_ignore(pbox, frames_ignore[fi], iou_thresh, 0.5):
+            continue
         else:
-            unmatched_preds.append(ev)
-    fp = len(unmatched_preds)
-    fn = len(gt_intervals) - len(claimed)
-    precision, recall, f1 = precision_recall_f1(tp, fp, fn)
-    return precision, recall, f1, latencies
+            flags.append(0)
+            confs.append(conf)
+    return flags, confs
+
+
+def average_precision(frames_pred, frames_gt, frames_ignore=None, iou_thresh: float = 0.5,
+                      points: int = 101):
+    """Single-class AP at one IoU threshold.
+
+    points=101 -> COCO-style (precision envelope sampled at recall 0,0.01,..,1).
+    points=11  -> PASCAL-VOC-2007 11-point (kept ONLY to compare with the
+    archived pre-audit run, which used it on conf>=0.25 detections).
+    Returns (ap, precisions, recalls).
+    """
+    assert len(frames_pred) == len(frames_gt)
+    n_gt = sum(len(g) for g in frames_gt)
+    if n_gt == 0:
+        return 0.0, [], []
+    flags, _ = _ranked_tp_fp(frames_pred, frames_gt, frames_ignore, iou_thresh)
+    tp = np.cumsum(flags) if flags else np.zeros(0)
+    fp = np.cumsum([1 - f for f in flags]) if flags else np.zeros(0)
+    if len(tp) == 0:
+        return 0.0, [], []
+    rec = tp / n_gt
+    prec = tp / np.maximum(tp + fp, 1e-12)
+    env = prec.copy()
+    for i in range(len(env) - 2, -1, -1):
+        env[i] = max(env[i], env[i + 1])
+    levels = np.linspace(0, 1, points)
+    samples = []
+    for r in levels:
+        idx = np.searchsorted(rec, r, side="left")
+        samples.append(env[idx] if idx < len(env) else 0.0)
+    return float(np.mean(samples)), prec.tolist(), rec.tolist()
+
+
+# ---------------------------------------------------------------- tracking
+def filter_ignored_preds(pred_frame, gt_boxes, ignore_boxes, iou_thresh: float = 0.5):
+    """MOTChallenge-style distractor handling: drop a prediction whose best
+    overlap is with a distractor/ignore box (IoU >= thresh and higher than its
+    IoU with every real GT box)."""
+    if not ignore_boxes:
+        return list(pred_frame)
+    kept = []
+    for p in pred_frame:
+        box = p[1:5] if len(p) >= 5 else p
+        best_ign = max((iou(box, r) for r in ignore_boxes), default=0.0)
+        best_gt = max((iou(box, g) for g in gt_boxes), default=0.0)
+        if best_ign >= iou_thresh and best_ign > best_gt:
+            continue
+        kept.append(p)
+    return kept
+
+
+def clear_mot(frames_pred_tracks, frames_gt_tracks, iou_thresh: float = 0.5) -> dict:
+    """CLEAR-MOT (Bernardin & Stiefelhagen 2008), following py-motmetrics.
+
+    frames_*: list over frames of [(id, x1, y1, x2, y2), ...].
+    Per frame: keep last frame's correspondences that still overlap
+    (IoU >= thresh), Hungarian-assign the rest on (1 - IoU), count an ID switch
+    when a GT object is matched to a different track id than the one it was
+    last matched to. Frag = transitions tracked -> missed between an object's
+    first and last tracked frame.
+    """
+    from scipy.optimize import linear_sum_assignment
+
+    assert len(frames_pred_tracks) == len(frames_gt_tracks)
+    last_match = {}           # gt id -> pred id it was last matched to
+    status = {}               # gt id -> list of tracked flags per frame present
+    n_gt = tp = fp = fn = idsw = 0
+    iou_sum = 0.0
+    for preds, gts in zip(frames_pred_tracks, frames_gt_tracks):
+        n_gt += len(gts)
+        pred_by_id = {p[0]: p[1:5] for p in preds}
+        gt_by_id = {g[0]: g[1:5] for g in gts}
+        matches = {}
+        used_p = set()
+        for gid, pid in last_match.items():  # continuity first
+            if gid in gt_by_id and pid in pred_by_id and pid not in used_p:
+                v = iou(gt_by_id[gid], pred_by_id[pid])
+                if v >= iou_thresh:
+                    matches[gid] = (pid, v)
+                    used_p.add(pid)
+        rem_g = [g for g in gt_by_id if g not in matches]
+        rem_p = [p for p in pred_by_id if p not in used_p]
+        if rem_g and rem_p:
+            cost = np.ones((len(rem_g), len(rem_p)))
+            for i, g in enumerate(rem_g):
+                for j, p in enumerate(rem_p):
+                    v = iou(gt_by_id[g], pred_by_id[p])
+                    if v >= iou_thresh:
+                        cost[i, j] = 1.0 - v
+            rows, cols = linear_sum_assignment(cost)
+            for i, j in zip(rows, cols):
+                if cost[i, j] < 1.0:
+                    g, p = rem_g[i], rem_p[j]
+                    if g in last_match and last_match[g] != p:
+                        idsw += 1
+                    matches[g] = (p, 1.0 - cost[i, j])
+        for g, (p, v) in matches.items():
+            last_match[g] = p
+            iou_sum += v
+        tp += len(matches)
+        fp += len(pred_by_id) - len(matches)
+        fn += len(gt_by_id) - len(matches)
+        for g in gt_by_id:
+            status.setdefault(g, []).append(g in matches)
+    frag = 0
+    for flags in status.values():
+        tracked = [i for i, f in enumerate(flags) if f]
+        if not tracked:
+            continue
+        seg = flags[tracked[0]:tracked[-1] + 1]
+        frag += sum(1 for a, b in zip(seg, seg[1:]) if a and not b)
+    mota = 1.0 - (fn + fp + idsw) / n_gt if n_gt else None
+    motp = iou_sum / tp if tp else None
+    return {"mota": mota, "motp_mean_iou": motp, "idsw": idsw, "frag": frag,
+            "tp": tp, "fp": fp, "fn": fn, "n_gt": n_gt,
+            "n_gt_ids": len(status)}
+
+
+def idf1(frames_pred_tracks, frames_gt_tracks, iou_thresh: float = 0.5) -> dict:
+    """IDF1 (Ristani et al. 2016): one-to-one GT-id <-> track-id assignment
+    maximising the number of co-occurring frames with IoU >= thresh."""
+    from scipy.optimize import linear_sum_assignment
+
+    gt_ids, pr_ids = {}, {}
+    co = {}
+    n_gt_dets = n_pr_dets = 0
+    for preds, gts in zip(frames_pred_tracks, frames_gt_tracks):
+        n_gt_dets += len(gts)
+        n_pr_dets += len(preds)
+        for g in gts:
+            gt_ids.setdefault(g[0], len(gt_ids))
+            for p in preds:
+                pr_ids.setdefault(p[0], len(pr_ids))
+                if iou(g[1:5], p[1:5]) >= iou_thresh:
+                    key = (gt_ids[g[0]], pr_ids[p[0]])
+                    co[key] = co.get(key, 0) + 1
+        for p in preds:
+            pr_ids.setdefault(p[0], len(pr_ids))
+    idtp = 0
+    if gt_ids and pr_ids and co:
+        m = np.zeros((len(gt_ids), len(pr_ids)))
+        for (i, j), c in co.items():
+            m[i, j] = c
+        rows, cols = linear_sum_assignment(-m)
+        idtp = int(m[rows, cols].sum())
+    idfp = n_pr_dets - idtp
+    idfn = n_gt_dets - idtp
+    denom = 2 * idtp + idfp + idfn
+    return {"idf1": (2 * idtp / denom) if denom else None,
+            "idp": idtp / (idtp + idfp) if (idtp + idfp) else None,
+            "idr": idtp / (idtp + idfn) if (idtp + idfn) else None,
+            "idtp": idtp, "idfp": idfp, "idfn": idfn}
+
+
+# ---------------------------------------------------------------- cross-check
+def crosscheck_motmetrics(frames_pred_tracks, frames_gt_tracks, iou_thresh: float = 0.5):
+    """Same tracking scores computed by the reference py-motmetrics package,
+    to cross-check clear_mot()/idf1(). Returns None if motmetrics is not
+    installed. The IoU distance matrix is built here (with iou()) because
+    motmetrics 1.4.0's own iou_matrix() calls np.asfarray, removed in
+    numpy 2; the accumulator and metric computation are motmetrics' own."""
+    try:
+        import motmetrics as mm
+    except ImportError:
+        return None
+    acc = mm.MOTAccumulator(auto_id=True)
+    for preds, gts in zip(frames_pred_tracks, frames_gt_tracks):
+        d = np.full((len(gts), len(preds)), np.nan)
+        for i, g in enumerate(gts):
+            for j, p in enumerate(preds):
+                ov = iou(g[1:5], p[1:5])
+                if ov >= iou_thresh:
+                    d[i, j] = 1.0 - ov
+        acc.update([g[0] for g in gts], [p[0] for p in preds], d)
+    names = ["mota", "motp", "idf1", "num_switches", "num_fragmentations",
+             "num_false_positives", "num_misses", "num_objects"]
+    s = mm.metrics.create().compute(acc, metrics=names, name="x")
+    row = {k: float(s[k].iloc[0]) for k in names}
+    return {"package": f"motmetrics {mm.__version__}",
+            "mota": row["mota"], "motp_mean_iou": 1.0 - row["motp"], "idf1": row["idf1"],
+            "idsw": int(row["num_switches"]), "frag": int(row["num_fragmentations"]),
+            "fp": int(row["num_false_positives"]), "fn": int(row["num_misses"]),
+            "n_gt": int(row["num_objects"])}

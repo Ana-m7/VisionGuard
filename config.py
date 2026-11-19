@@ -32,33 +32,19 @@ _load_dotenv(os.path.join(ROOT, ".env"))
 # cam_id → video source. An int (e.g. 0) selects a local webcam,
 # a string path selects a video file, an rtsp:// URL selects an IP camera.
 VIDEO_SOURCES = {
-    # Video file disconnected — live webcam only. To reconnect, uncomment
-    # this line and add 2 back to ACTIVE_CAMS in frontend/dashboard.html:
-    # 2: os.path.join(ROOT, "videos", "video2.mp4"),
-    # video2.mp4 is the clip that exercises both detectors. Two other clips
-    # were evaluated and set aside, and are not shipped in the repository:
-    # video3.mp4 contains no fall at all, and video4.mp4 films a walkway from
-    # an upper floor where nobody is large enough to detect — 0 of 184
-    # sampled frames reached the crowd threshold. Drop a file into videos/
-    # and add it here (plus ACTIVE_CAMS in frontend/dashboard.html) to
-    # bring another camera online.
-
-    # The only wired camera: overhead courtyard footage with a fall. Video
-    # frames only; OpenCV never decodes the audio track.
-    1: os.path.join(ROOT, "videos", "videofall06.mp4"),
-
-    # Unwired. To reconnect a camera, uncomment its line and add its id to
-    # ACTIVE_CAMS in frontend/dashboard.html.
-    # 2: os.path.join(ROOT, "videos", "video3.mp4"),  # YouTube test clip
-    #                                    (https://youtu.be/8DJi4PrdFCg), not shipped
-    # 4: os.path.join(ROOT, "videos", "fall.mp4"),
+    # 4 cameras wired to the sample clips in videos/. Video frames only;
+    # OpenCV never decodes the audio track.
+    1: os.path.join(ROOT, "videos", "fall_crowd.mp4"),
+    2: os.path.join(ROOT, "videos", "normal.mp4"),
+    3: os.path.join(ROOT, "videos", "crowd.mp4"),
+    4: os.path.join(ROOT, "videos", "fall.mp4"),
 }
 
 CAMERA_LABELS = {
     1: "Courtyard",
     2: "Corridor B",
     3: "Front Porch",
-    4: "Webcam",
+    4: "Lobby",
 }
 
 # Local webcam as CAM-04, alongside the file-backed cameras. If no webcam is

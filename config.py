@@ -134,6 +134,29 @@ DETECTION_CONF_MIN = 0.25   # min box confidence to count as a person at all —
                             # upright, unoccluded COCO training images this
                             # model was trained on.
 
+FALL_DETECTION_CONF_MIN = 0.1  # separate, lower confidence floor used only
+                            # for the pose model's own "is this a person"
+                            # box score — crowd counting keeps the stricter
+                            # DETECTION_CONF_MIN above. A person lying flat
+                            # doesn't look like a "person" box to a model
+                            # trained mostly on upright people: measured on
+                            # test footage at only ~0.13 box confidence,
+                            # despite the model finding their shoulder/hip/
+                            # ankle keypoints at 0.8-0.95 confidence — the
+                            # skeleton is read fine, the box score just
+                            # undersells it. Safe to lower only for fall
+                            # detection because a false "person" here still
+                            # has to clear keypoint confidence, torso angle,
+                            # and the leg veto before it is ever called a
+                            # fall.
+FALL_TRACKER_CONFIG = os.path.join(ROOT, "detector", "fall_tracker.yaml")
+                            # ByteTrack's stock config refuses to ever start
+                            # a track below 0.25 confidence, which would
+                            # silently undo FALL_DETECTION_CONF_MIN above —
+                            # a person lying flat the whole time never gets
+                            # a track ID and is invisible to fall detection.
+                            # See detector/fall_tracker.yaml.
+
 NESTED_BOX_CONTAINMENT = 0.9  # a person box at least this much inside a more
                             # confident person box is a duplicate (typically
                             # the head detected again inside the body box)

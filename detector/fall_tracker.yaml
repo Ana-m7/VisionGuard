@@ -1,0 +1,24 @@
+# ByteTrack config for the pose/fall model only.
+#
+# Stock bytetrack.yaml requires new_track_thresh=0.25 confidence to ever
+# start tracking a detection — a person lying flat under a steep overhead
+# camera scores as low as ~0.13 "is this a person" box confidence the whole
+# time they are down (their keypoints are detected fine at 0.8-0.95
+# confidence; only the overall box score is low, since the detector was
+# trained mostly on upright people). With the stock threshold, such a
+# person never gets a track ID at all and is invisible to fall detection
+# for the entire incident, however long DETECT_INTERVAL samples it.
+#
+# Lowered to track down to FALL_DETECTION_CONF_MIN (config.py). Downstream
+# fall classification still requires keypoint confidence, torso angle, and
+# the leg veto to all agree before calling it a fall, so a few more weak
+# "person" tracks reaching that logic is safe — crowd counting (which
+# actually drives the headcount shown to the operator) is untouched; it
+# uses its own model and the stricter DETECTION_CONF_MIN.
+tracker_type: bytetrack
+track_high_thresh: 0.1
+track_low_thresh: 0.05
+new_track_thresh: 0.1
+track_buffer: 30
+match_thresh: 0.8
+fuse_score: True

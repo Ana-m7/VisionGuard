@@ -742,7 +742,9 @@ def inference_thread(cam_id, latest, overlay, live_stats):
         det_result = det_model.predict(frame, classes=[0],
                                        conf=config.DETECTION_CONF_MIN, verbose=False)[0]
         pose_result = pose_model.track(frame, classes=[0], persist=True,
-                                       conf=config.DETECTION_CONF_MIN, verbose=False)[0]
+                                       conf=config.FALL_DETECTION_CONF_MIN,
+                                       tracker=config.FALL_TRACKER_CONFIG,
+                                       verbose=False)[0]
         latency_ms = (time.perf_counter() - t_infer) * 1000
         det_result = drop_nested_boxes(det_result)   # one person, one box
         boxes = det_result.boxes
